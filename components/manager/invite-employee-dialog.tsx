@@ -1,0 +1,114 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { UserPlus } from "lucide-react";
+import { SimpleDialog } from "@/components/ui/simple-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { inviteEmployee } from "@/app/actions/manager";
+
+export function InviteEmployeeDialog() {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  const handleClose = () => {
+    setOpen(false);
+    setError(null);
+    setSent(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    setError(null);
+
+    startTransition(async () => {
+      const result = await inviteEmployee(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setSent(true);
+        router.refresh();
+      }
+    });
+  };
+
+  return (
+    <>
+      <Button onClick={() => setOpen(true)} size="sm">
+        <UserPlus size={15} className="mr-1.5" />
+        Add Employee
+      </Button>
+
+      <SimpleDialog open={open} onClose={handleClose} title="Invite employee">
+        {sent ? (
+          <div className="py-4 text-center space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Invite sent! The employee will receive an email to set up their
+              account.
+            </p>
+            <Button size="sm" variant="outline" onClick={handleClose}>
+              Done
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-first">First name</Label>
+                <Input
+                  id="emp-first"
+                  name="first_name"
+                  placeholder="Jane"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="emp-last">Last name</Label>
+                <Input
+                  id="emp-last"
+                  name="last_name"
+                  placeholder="Smith"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="emp-email">Email</Label>
+              <Input
+                id="emp-email"
+                name="email"
+                type="email"
+                placeholder="jane@company.com"
+                required
+              />
+            </div>
+
+            {error && <p className="text-sm text-destructive">{error}</p>}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleClose}
+                disabled={isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Sending…" : "Send invite"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </SimpleDialog>
+    </>
+  );
+}

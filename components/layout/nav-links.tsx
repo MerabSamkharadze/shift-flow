@@ -29,10 +29,12 @@ const NAV: Record<UserRole, NavItem[]> = {
     { href: "/manager", label: "Dashboard", icon: LayoutDashboard, exact: true },
     { href: "/manager/groups", label: "Groups", icon: Layers },
     { href: "/manager/employees", label: "Employees", icon: Users },
+    { href: "/manager/schedule", label: "Schedule Builder", icon: Calendar },
     { href: "/manager/swaps", label: "Swap Requests", icon: ArrowLeftRight },
   ],
   employee: [
     { href: "/employee", label: "My Schedule", icon: Calendar, exact: true },
+    { href: "/employee/team", label: "Team", icon: Users },
     { href: "/employee/swaps", label: "Swap Requests", icon: ArrowLeftRight },
   ],
 };

@@ -44,9 +44,8 @@ export default async function GroupDetailPage({
   // Group members with user details
   const { data: membersRaw } = await supabase
     .from("group_members")
-    .select("id, user_id, joined_at, users(id, first_name, last_name, email)")
-    .eq("group_id", group.id)
-    .order("joined_at", { ascending: true });
+    .select("id, user_id, users(id, first_name, last_name, email)")
+    .eq("group_id", group.id);
 
   type UserDetail = {
     id: string;

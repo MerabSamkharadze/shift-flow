@@ -4,7 +4,10 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc:*)",
       "Bash(node -e:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

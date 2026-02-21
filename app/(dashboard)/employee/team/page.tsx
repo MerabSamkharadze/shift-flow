@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   TeamScheduleClient,
   type TeamMemberRow,
@@ -8,18 +9,22 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function getMonday(dateStr?: string): string {
   const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 export default async function TeamPage({
@@ -27,7 +32,9 @@ export default async function TeamPage({
 }: {
   searchParams: { week?: string };
 }) {
+  // Auth always uses the session-based server client
   const supabase = createClient();
+  const service = createServiceClient();
 
   const {
     data: { user },
@@ -45,7 +52,8 @@ export default async function TeamPage({
   const weekStart = getMonday(searchParams.week);
   const weekEnd = addDays(weekStart, 6);
 
-  // ── 1. My group memberships ───────────────────────────────────────────────────
+  // ── 1. My group memberships ───────────────────────────────────────────────
+  // Own rows — server client is fine here
   const { data: myMemberships } = await supabase
     .from("group_members")
     .select("group_id")
@@ -62,17 +70,13 @@ export default async function TeamPage({
             View your colleagues&apos; shifts for the week.
           </p>
         </div>
-        <TeamScheduleClient
-          weekStart={weekStart}
-          members={[]}
-          shifts={[]}
-        />
+        <TeamScheduleClient weekStart={weekStart} members={[]} shifts={[]} />
       </div>
     );
   }
 
-  // ── 2. All members of my groups ───────────────────────────────────────────────
-  const { data: allMemberRows } = await supabase
+  // ── 2. ALL members of my groups (cross-user read → service client) ────────
+  const { data: allMemberRows } = await service
     .from("group_members")
     .select("user_id, group_id")
     .in("group_id", myGroupIds);
@@ -81,8 +85,9 @@ export default async function TeamPage({
     ...new Set((allMemberRows ?? []).map((m) => m.user_id)),
   ];
 
+  // Cross-user read: fetch names of all group members
   const { data: memberUsers } = memberUserIds.length
-    ? await supabase
+    ? await service
         .from("users")
         .select("id, first_name, last_name")
         .in("id", memberUserIds)
@@ -90,25 +95,25 @@ export default async function TeamPage({
         .order("first_name")
     : { data: [] as { id: string; first_name: string; last_name: string }[] };
 
-  // ── 3. Published schedules for my groups ─────────────────────────────────────
-  const { data: schedules } = await supabase
+  // ── 3. Published + locked schedules for my groups ─────────────────────────
+  // Employees see published and locked schedules (not drafts)
+  const { data: schedules } = await service
     .from("schedules")
     .select("id, group_id")
     .in("group_id", myGroupIds)
-    .eq("status", "published");
+    .in("status", ["published", "locked"]);
 
   const scheduleIds = (schedules ?? []).map((s) => s.id);
   const scheduleGroupMap = new Map(
     (schedules ?? []).map((s) => [s.id, s.group_id]),
   );
 
-  // ── 4. Shifts for those schedules, current week, all members ─────────────────
+  // ── 4. All shifts for those schedules, this week, across all members ──────
   const { data: shifts } = scheduleIds.length
-    ? await supabase
+    ? await service
         .from("shifts")
-        .select("id, schedule_id, user_id, date, start_time, end_time")
+        .select("id, schedule_id, assigned_to, date, start_time, end_time")
         .in("schedule_id", scheduleIds)
-        .in("user_id", memberUserIds)
         .gte("date", weekStart)
         .lte("date", weekEnd)
         .order("start_time")
@@ -116,15 +121,15 @@ export default async function TeamPage({
         data: [] as {
           id: string;
           schedule_id: string;
-          user_id: string;
+          assigned_to: string;
           date: string;
           start_time: string;
           end_time: string;
         }[],
       };
 
-  // ── 5. Group info ─────────────────────────────────────────────────────────────
-  const { data: groups } = await supabase
+  // ── 5. Group info ─────────────────────────────────────────────────────────
+  const { data: groups } = await service
     .from("groups")
     .select("id, name, color")
     .in("id", myGroupIds);
@@ -133,7 +138,7 @@ export default async function TeamPage({
     (groups ?? []).map((g) => [g.id, { name: g.name, color: g.color }]),
   );
 
-  // ── Assemble props ────────────────────────────────────────────────────────────
+  // ── Assemble props ────────────────────────────────────────────────────────
   const members: TeamMemberRow[] = (memberUsers ?? []).map((u) => ({
     id: u.id,
     firstName: u.first_name,
@@ -145,7 +150,7 @@ export default async function TeamPage({
     const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
     return {
       id: s.id,
-      userId: s.user_id,
+      userId: s.assigned_to,
       date: s.date,
       startTime: s.start_time,
       endTime: s.end_time,

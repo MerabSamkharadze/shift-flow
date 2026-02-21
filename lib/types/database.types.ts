@@ -15,21 +15,26 @@ export type ScheduleStatus = "draft" | "published" | "locked" | "archived"
 export type SwapType = "direct" | "public"
 
 export type SwapStatus =
-  | "pending"
-  | "accepted"
+  | "pending_employee"
+  | "accepted_by_employee"
+  | "pending_manager"
   | "approved"
-  | "rejected"
+  | "rejected_by_employee"
+  | "rejected_by_manager"
+  | "cancelled"
   | "expired"
 
+export type ShiftStatus = "scheduled" | "completed" | "cancelled" | "pending_swap"
+
 export type NotificationType =
-  | "swap_requested"
-  | "swap_accepted"
-  | "swap_rejected"
+  | "swap_request_received"
+  | "swap_request_accepted"
+  | "swap_request_rejected"
   | "swap_approved"
-  | "swap_expired"
-  | "schedule_published"
-  | "schedule_locked"
-  | "shift_reminder"
+  | "swap_rejected_by_manager"
+  | "public_swap_available"
+  | "schedule_changed"
+  | "new_schedule_published"
 
 // ─── Database ─────────────────────────────────────────────────────────────────
 
@@ -61,8 +66,8 @@ export interface Database {
           company_id: string
           role: UserRole
           email: string
-          first_name: string
-          last_name: string
+          first_name: string | null
+          last_name: string | null
           phone: string | null
           must_change_password: boolean
           created_by: string | null
@@ -74,8 +79,8 @@ export interface Database {
           company_id: string
           role: UserRole
           email: string
-          first_name: string
-          last_name: string
+          first_name?: string | null
+          last_name?: string | null
           phone?: string | null
           must_change_password?: boolean
           created_by?: string | null
@@ -87,8 +92,8 @@ export interface Database {
           company_id?: string
           role?: UserRole
           email?: string
-          first_name?: string
-          last_name?: string
+          first_name?: string | null
+          last_name?: string | null
           phone?: string | null
           must_change_password?: boolean
           created_by?: string | null
@@ -111,9 +116,8 @@ export interface Database {
           manager_id: string
           name: string
           color: string
-          description: string | null
+          is_active: boolean | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
@@ -121,9 +125,8 @@ export interface Database {
           manager_id: string
           name: string
           color?: string
-          description?: string | null
+          is_active?: boolean | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
@@ -131,8 +134,7 @@ export interface Database {
           manager_id?: string
           name?: string
           color?: string
-          description?: string | null
-          updated_at?: string
+          is_active?: boolean | null
         }
         Relationships: [
           {
@@ -150,61 +152,24 @@ export interface Database {
         ]
       }
 
-      shift_templates: {
-        Row: {
-          id: string
-          group_id: string
-          name: string
-          start_time: string // "HH:MM:SS"
-          end_time: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          group_id: string
-          name: string
-          start_time: string
-          end_time: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          group_id?: string
-          name?: string
-          start_time?: string
-          end_time?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "shift_templates_group_id_fkey"
-            columns: ["group_id"]
-            referencedRelation: "groups"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-
       group_members: {
         Row: {
           id: string
           group_id: string
           user_id: string
-          joined_at: string
+          assigned_at: string | null
         }
         Insert: {
           id?: string
           group_id: string
           user_id: string
-          joined_at?: string
+          assigned_at?: string | null
         }
         Update: {
           id?: string
           group_id?: string
           user_id?: string
-          joined_at?: string
+          assigned_at?: string | null
         }
         Relationships: [
           {
@@ -222,35 +187,72 @@ export interface Database {
         ]
       }
 
-      schedules: {
+      shift_templates: {
         Row: {
           id: string
           group_id: string
-          week_start: string // "YYYY-MM-DD"
-          week_end: string
-          status: ScheduleStatus
-          created_by: string
+          name: string
+          start_time: string // "HH:MM:SS"
+          end_time: string
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           group_id: string
-          week_start: string
-          week_end: string
-          status?: ScheduleStatus
-          created_by: string
+          name: string
+          start_time: string
+          end_time: string
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           group_id?: string
-          week_start?: string
-          week_end?: string
+          name?: string
+          start_time?: string
+          end_time?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_templates_group_id_fkey"
+            columns: ["group_id"]
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
+      schedules: {
+        Row: {
+          id: string
+          company_id: string
+          manager_id: string
+          group_id: string
+          week_start_date: string // "YYYY-MM-DD"
+          week_end_date: string
+          status: ScheduleStatus
+          copied_from_schedule_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          company_id: string
+          manager_id: string
+          group_id: string
+          week_start_date: string
+          week_end_date: string
           status?: ScheduleStatus
-          created_by?: string
-          updated_at?: string
+          copied_from_schedule_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          company_id?: string
+          manager_id?: string
+          group_id?: string
+          week_start_date?: string
+          week_end_date?: string
+          status?: ScheduleStatus
+          copied_from_schedule_id?: string | null
         }
         Relationships: [
           {
@@ -260,8 +262,14 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "schedules_created_by_fkey"
-            columns: ["created_by"]
+            foreignKeyName: "schedules_company_id_fkey"
+            columns: ["company_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedules_manager_id_fkey"
+            columns: ["manager_id"]
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -272,45 +280,56 @@ export interface Database {
         Row: {
           id: string
           schedule_id: string
-          user_id: string
-          template_id: string | null
+          group_id: string
+          assigned_to: string
           date: string // "YYYY-MM-DD"
           start_time: string // "HH:MM:SS"
           end_time: string
-          is_manually_adjusted: boolean
+          shift_template_id: string | null
+          is_manually_adjusted: boolean | null
           original_start_time: string | null
           original_end_time: string | null
+          status: ShiftStatus
           notes: string | null
+          created_by: string
+          modified_by: string | null
           created_at: string
           updated_at: string
         }
         Insert: {
           id?: string
           schedule_id: string
-          user_id: string
-          template_id?: string | null
+          group_id: string
+          assigned_to: string
           date: string
           start_time: string
           end_time: string
-          is_manually_adjusted?: boolean
+          shift_template_id?: string | null
+          is_manually_adjusted?: boolean | null
           original_start_time?: string | null
           original_end_time?: string | null
+          status?: ShiftStatus
           notes?: string | null
+          created_by: string
+          modified_by?: string | null
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           schedule_id?: string
-          user_id?: string
-          template_id?: string | null
+          group_id?: string
+          assigned_to?: string
           date?: string
           start_time?: string
           end_time?: string
-          is_manually_adjusted?: boolean
+          shift_template_id?: string | null
+          is_manually_adjusted?: boolean | null
           original_start_time?: string | null
           original_end_time?: string | null
+          status?: ShiftStatus
           notes?: string | null
+          modified_by?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -321,14 +340,20 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "shifts_user_id_fkey"
-            columns: ["user_id"]
+            foreignKeyName: "shifts_assigned_to_fkey"
+            columns: ["assigned_to"]
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "shifts_template_id_fkey"
-            columns: ["template_id"]
+            foreignKeyName: "shifts_group_id_fkey"
+            columns: ["group_id"]
+            referencedRelation: "groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shifts_shift_template_id_fkey"
+            columns: ["shift_template_id"]
             referencedRelation: "shift_templates"
             referencedColumns: ["id"]
           },
@@ -339,40 +364,52 @@ export interface Database {
         Row: {
           id: string
           shift_id: string
-          requester_id: string
-          recipient_id: string | null
+          from_user_id: string
+          to_user_id: string | null      // direct: intended recipient; public: null
           type: SwapType
           status: SwapStatus
-          deadline: string // ISO timestamp
-          manager_id: string | null
-          manager_note: string | null
-          created_at: string
-          updated_at: string
+          accepted_by: string | null     // set when public swap is claimed
+          approved_by: string | null     // set when manager approves
+          manager_notes: string | null
+          company_id: string | null
+          requested_at: string | null
+          employee_responded_at: string | null
+          manager_responded_at: string | null
+          deadline: string
+          expires_at: string | null
         }
         Insert: {
           id?: string
           shift_id: string
-          requester_id: string
-          recipient_id?: string | null
+          from_user_id: string
+          to_user_id?: string | null
           type: SwapType
           status?: SwapStatus
+          accepted_by?: string | null
+          approved_by?: string | null
+          manager_notes?: string | null
+          company_id?: string | null
+          requested_at?: string | null
+          employee_responded_at?: string | null
+          manager_responded_at?: string | null
           deadline: string
-          manager_id?: string | null
-          manager_note?: string | null
-          created_at?: string
-          updated_at?: string
+          expires_at?: string | null
         }
         Update: {
           id?: string
           shift_id?: string
-          requester_id?: string
-          recipient_id?: string | null
+          from_user_id?: string
+          to_user_id?: string | null
           type?: SwapType
           status?: SwapStatus
+          accepted_by?: string | null
+          approved_by?: string | null
+          manager_notes?: string | null
+          company_id?: string | null
+          employee_responded_at?: string | null
+          manager_responded_at?: string | null
           deadline?: string
-          manager_id?: string | null
-          manager_note?: string | null
-          updated_at?: string
+          expires_at?: string | null
         }
         Relationships: [
           {
@@ -382,20 +419,26 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "shift_swaps_requester_id_fkey"
-            columns: ["requester_id"]
+            foreignKeyName: "shift_swaps_from_user_id_fkey"
+            columns: ["from_user_id"]
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "shift_swaps_recipient_id_fkey"
-            columns: ["recipient_id"]
+            foreignKeyName: "shift_swaps_to_user_id_fkey"
+            columns: ["to_user_id"]
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "shift_swaps_manager_id_fkey"
-            columns: ["manager_id"]
+            foreignKeyName: "shift_swaps_accepted_by_fkey"
+            columns: ["accepted_by"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_swaps_approved_by_fkey"
+            columns: ["approved_by"]
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
@@ -408,9 +451,11 @@ export interface Database {
           user_id: string
           type: NotificationType
           title: string
-          body: string
-          read: boolean
-          metadata: Json | null
+          message: string
+          read: boolean | null
+          related_shift_id: string | null
+          related_swap_id: string | null
+          action_url: string | null
           created_at: string
         }
         Insert: {
@@ -418,9 +463,11 @@ export interface Database {
           user_id: string
           type: NotificationType
           title: string
-          body: string
-          read?: boolean
-          metadata?: Json | null
+          message: string
+          read?: boolean | null
+          related_shift_id?: string | null
+          related_swap_id?: string | null
+          action_url?: string | null
           created_at?: string
         }
         Update: {
@@ -428,9 +475,11 @@ export interface Database {
           user_id?: string
           type?: NotificationType
           title?: string
-          body?: string
-          read?: boolean
-          metadata?: Json | null
+          message?: string
+          read?: boolean | null
+          related_shift_id?: string | null
+          related_swap_id?: string | null
+          action_url?: string | null
         }
         Relationships: [
           {
@@ -448,7 +497,11 @@ export interface Database {
           company_id: string
           user_id: string
           action: string
-          details: Json | null
+          entity_type: string | null
+          entity_id: string | null
+          old_value: Json | null
+          new_value: Json | null
+          ip_address: string | null
           created_at: string
         }
         Insert: {
@@ -456,7 +509,11 @@ export interface Database {
           company_id: string
           user_id: string
           action: string
-          details?: Json | null
+          entity_type?: string | null
+          entity_id?: string | null
+          old_value?: Json | null
+          new_value?: Json | null
+          ip_address?: string | null
           created_at?: string
         }
         Update: {
@@ -464,7 +521,11 @@ export interface Database {
           company_id?: string
           user_id?: string
           action?: string
-          details?: Json | null
+          entity_type?: string | null
+          entity_id?: string | null
+          old_value?: Json | null
+          new_value?: Json | null
+          ip_address?: string | null
         }
         Relationships: [
           {
@@ -501,6 +562,7 @@ export interface Database {
       schedule_status: ScheduleStatus
       swap_type: SwapType
       swap_status: SwapStatus
+      shift_status: ShiftStatus
       notification_type: NotificationType
     }
   }

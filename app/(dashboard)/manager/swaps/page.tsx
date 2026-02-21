@@ -58,10 +58,10 @@ export default async function SwapsPage() {
   const { data: swaps } = await supabase
     .from("shift_swaps")
     .select(
-      "id, shift_id, requester_id, recipient_id, type, status, created_at, manager_note",
+      "id, shift_id, from_user_id, to_user_id, accepted_by, type, status, manager_notes, requested_at",
     )
     .in("shift_id", shiftIds)
-    .order("created_at", { ascending: false });
+    .order("requested_at", { ascending: false });
 
   if (!swaps || swaps.length === 0) {
     return <SwapsClient swaps={[]} />;
@@ -70,8 +70,9 @@ export default async function SwapsPage() {
   // Step 5: Fetch all involved users
   const userIds = [
     ...new Set([
-      ...swaps.map((s) => s.requester_id),
-      ...swaps.filter((s) => s.recipient_id).map((s) => s.recipient_id!),
+      ...swaps.map((s) => s.from_user_id),
+      ...swaps.map((s) => s.to_user_id).filter((id): id is string => id !== null),
+      ...swaps.map((s) => s.accepted_by).filter((id): id is string => id !== null),
     ]),
   ];
 
@@ -104,14 +105,16 @@ export default async function SwapsPage() {
       id: s.id,
       type: s.type as SwapRow["type"],
       status: s.status as SwapRow["status"],
-      createdAt: s.created_at,
-      managerNote: s.manager_note,
+      createdAt: s.requested_at,
+      managerNote: s.manager_notes,
       shiftDate: shift?.date ?? "",
       shiftStart: shift?.start_time ?? "",
       shiftEnd: shift?.end_time ?? "",
       groupName: groupMap.get(groupId) ?? "",
-      requesterName: userMap.get(s.requester_id) ?? "Unknown",
-      recipientName: s.recipient_id ? (userMap.get(s.recipient_id) ?? "Unknown") : null,
+      requesterName: userMap.get(s.from_user_id) ?? "Unknown",
+      recipientName: (s.to_user_id ?? s.accepted_by)
+        ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? "Unknown")
+        : null,
     };
   });
 

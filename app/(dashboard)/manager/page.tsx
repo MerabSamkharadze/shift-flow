@@ -64,9 +64,9 @@ export default async function ManagerDashboardPage() {
   const { data: allShifts } = scheduleIds.length
     ? await supabase
         .from("shifts")
-        .select("id, schedule_id, date, start_time, end_time, user_id")
+        .select("id, schedule_id, date, start_time, end_time, assigned_to")
         .in("schedule_id", scheduleIds)
-    : { data: [] as { id: string; schedule_id: string; date: string; start_time: string; end_time: string; user_id: string | null }[] };
+    : { data: [] as { id: string; schedule_id: string; date: string; start_time: string; end_time: string; assigned_to: string | null }[] };
 
   const allShiftIds = (allShifts ?? []).map((s) => s.id);
 
@@ -82,12 +82,12 @@ export default async function ManagerDashboardPage() {
   const { data: pendingSwaps, count: pendingCount } = allShiftIds.length
     ? await supabase
         .from("shift_swaps")
-        .select("id, shift_id, requester_id, recipient_id, created_at", {
+        .select("id, shift_id, from_user_id, to_user_id, accepted_by, requested_at", {
           count: "exact",
         })
         .in("shift_id", allShiftIds)
-        .eq("status", "accepted")
-        .order("created_at", { ascending: false })
+        .in("status", ["accepted_by_employee", "pending_manager"])
+        .order("requested_at", { ascending: false })
         .limit(3)
     : { data: [], count: 0 };
 
@@ -102,14 +102,15 @@ export default async function ManagerDashboardPage() {
   );
 
   // ── Today's shifts ───────────────────────────────────────────────────────────
-  const today = new Date().toISOString().slice(0, 10);
+  const _d = new Date();
+  const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
   const todayShifts = (allShifts ?? [])
     .filter((s) => s.date === today)
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   // Fetch employee names for today's shifts
   const todayUserIds = [
-    ...new Set(todayShifts.map((s) => s.user_id).filter(Boolean) as string[]),
+    ...new Set(todayShifts.map((s) => s.assigned_to).filter(Boolean) as string[]),
   ];
   const { data: todayUsers } = todayUserIds.length
     ? await supabase
@@ -125,10 +126,9 @@ export default async function ManagerDashboardPage() {
   // Fetch employee names for pending swaps
   const swapUserIds = [
     ...new Set([
-      ...(pendingSwaps ?? []).map((s) => s.requester_id),
-      ...(pendingSwaps ?? [])
-        .filter((s) => s.recipient_id)
-        .map((s) => s.recipient_id!),
+      ...(pendingSwaps ?? []).map((s) => s.from_user_id),
+      ...(pendingSwaps ?? []).map((s) => s.to_user_id).filter((id): id is string => id !== null),
+      ...(pendingSwaps ?? []).map((s) => s.accepted_by).filter((id): id is string => id !== null),
     ]),
   ];
   const { data: swapUsers } = swapUserIds.length
@@ -210,8 +210,8 @@ export default async function ManagerDashboardPage() {
                       />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">
-                          {shift.user_id
-                            ? (todayUserMap.get(shift.user_id) ?? "Unknown")
+                          {shift.assigned_to
+                            ? (todayUserMap.get(shift.assigned_to) ?? "Unknown")
                             : "Unassigned"}
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -261,12 +261,12 @@ export default async function ManagerDashboardPage() {
                         <div className="flex items-center justify-between gap-2">
                           <p className="text-sm">
                             <span className="font-medium">
-                              {swapUserMap.get(swap.requester_id) ?? "Unknown"}
+                              {swapUserMap.get(swap.from_user_id) ?? "Unknown"}
                             </span>
                             <span className="text-muted-foreground"> → </span>
-                            {swap.recipient_id ? (
+                            {(swap.to_user_id ?? swap.accepted_by) ? (
                               <span className="font-medium">
-                                {swapUserMap.get(swap.recipient_id) ?? "Unknown"}
+                                {swapUserMap.get(swap.to_user_id ?? swap.accepted_by ?? "") ?? "Unknown"}
                               </span>
                             ) : (
                               <span className="font-medium text-violet-600 dark:text-violet-400">

@@ -257,9 +257,9 @@ export async function approveSwap(swapId: string) {
 
     const { error } = await supabase
       .from("shift_swaps")
-      .update({ status: "approved", manager_id: profile.id })
+      .update({ status: "approved", approved_by: profile.id })
       .eq("id", swapId)
-      .eq("status", "accepted"); // guard: only act on swaps awaiting approval
+      .in("status", ["accepted_by_employee", "pending_manager"]);
 
     if (error) return { error: error.message };
 
@@ -277,12 +277,12 @@ export async function rejectSwap(swapId: string, note?: string) {
     const { error } = await supabase
       .from("shift_swaps")
       .update({
-        status: "rejected",
-        manager_id: profile.id,
-        manager_note: note?.trim() || null,
+        status: "rejected_by_manager",
+        approved_by: profile.id,
+        manager_notes: note?.trim() || null,
       })
       .eq("id", swapId)
-      .eq("status", "accepted"); // guard: only act on swaps awaiting approval
+      .in("status", ["accepted_by_employee", "pending_manager"]);
 
     if (error) return { error: error.message };
 

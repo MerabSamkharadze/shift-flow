@@ -13,7 +13,7 @@ import { approveSwap, rejectSwap } from "@/app/actions/manager";
 export type SwapRow = {
   id: string;
   type: "direct" | "public";
-  status: "pending" | "accepted" | "approved" | "rejected" | "expired";
+  status: "pending_employee" | "accepted_by_employee" | "pending_manager" | "approved" | "rejected_by_employee" | "rejected_by_manager" | "cancelled" | "expired";
   createdAt: string;
   managerNote: string | null;
   shiftDate: string;    // "YYYY-MM-DD"
@@ -59,25 +59,20 @@ function TypeBadge({ type }: { type: SwapRow["type"] }) {
 }
 
 function StatusBadge({ status }: { status: SwapRow["status"] }) {
+  const [label, extra] = ((): [string, string] => {
+    if (status === "pending_employee") return ["Awaiting employee", "text-muted-foreground"];
+    if (status === "accepted_by_employee" || status === "pending_manager")
+      return ["Pending approval", "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"];
+    if (status === "approved")
+      return ["Approved", "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400"];
+    if (status === "rejected_by_employee") return ["Declined by employee", "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"];
+    if (status === "rejected_by_manager") return ["Rejected", "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"];
+    if (status === "cancelled") return ["Cancelled", "text-muted-foreground"];
+    return ["Expired", "text-muted-foreground"];
+  })();
   return (
-    <Badge
-      variant="outline"
-      className={cn(
-        status === "pending" && "text-muted-foreground",
-        status === "accepted" &&
-          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
-        status === "approved" &&
-          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
-        status === "rejected" &&
-          "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400",
-        status === "expired" && "text-muted-foreground",
-      )}
-    >
-      {status === "pending" && "Awaiting acceptance"}
-      {status === "accepted" && "Pending approval"}
-      {status === "approved" && "Approved"}
-      {status === "rejected" && "Rejected"}
-      {status === "expired" && "Expired"}
+    <Badge variant="outline" className={extra}>
+      {label}
     </Badge>
   );
 }
@@ -112,9 +107,13 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
   const router = useRouter();
 
   const displayed =
-    tab === "pending" ? swaps.filter((s) => s.status === "accepted") : swaps;
+    tab === "pending"
+      ? swaps.filter((s) => s.status === "accepted_by_employee" || s.status === "pending_manager")
+      : swaps;
 
-  const pendingCount = swaps.filter((s) => s.status === "accepted").length;
+  const pendingCount = swaps.filter(
+    (s) => s.status === "accepted_by_employee" || s.status === "pending_manager",
+  ).length;
 
   function handleConfirmReject() {
     if (!rejectId) return;
@@ -242,7 +241,7 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
 
                   {/* Actions */}
                   <td className="px-4 py-3">
-                    {s.status === "accepted" && (
+                    {(s.status === "accepted_by_employee" || s.status === "pending_manager") && (
                       <div className="flex items-center gap-3 justify-end">
                         <ApproveButton swapId={s.id} />
                         <button

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import {
   MyScheduleClient,
   type ShiftRow,
@@ -10,18 +11,22 @@ export const dynamic = "force-dynamic";
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function getMonday(dateStr?: string): string {
   const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
   const day = d.getDay(); // 0=Sun
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
 
 export default async function EmployeePage({
@@ -30,6 +35,7 @@ export default async function EmployeePage({
   searchParams: { week?: string };
 }) {
   const supabase = createClient();
+  const service = createServiceClient();
 
   const {
     data: { user },
@@ -51,7 +57,7 @@ export default async function EmployeePage({
   const { data: shifts } = await supabase
     .from("shifts")
     .select("id, schedule_id, date, start_time, end_time")
-    .eq("user_id", profile.id)
+    .eq("assigned_to", profile.id)
     .gte("date", weekStart)
     .lte("date", weekEnd)
     .order("start_time");
@@ -82,9 +88,9 @@ export default async function EmployeePage({
     ? await supabase
         .from("shift_swaps")
         .select("id, shift_id, status, type")
-        .eq("requester_id", profile.id)
+        .eq("from_user_id", profile.id)
         .in("shift_id", shiftIds)
-        .in("status", ["pending", "accepted"])
+        .in("status", ["pending_employee", "accepted_by_employee", "pending_manager"])
     : { data: [] as { id: string; shift_id: string; status: string; type: string }[] };
 
   // ── 4. Colleagues in my groups ───────────────────────────────────────────────
@@ -96,7 +102,7 @@ export default async function EmployeePage({
   const myGroupIds = (myMemberships ?? []).map((m) => m.group_id);
 
   const { data: allMemberRows } = myGroupIds.length
-    ? await supabase
+    ? await service
         .from("group_members")
         .select("user_id, group_id")
         .in("group_id", myGroupIds)
@@ -108,7 +114,7 @@ export default async function EmployeePage({
   ];
 
   const { data: colleagueUsers } = colleagueIds.length
-    ? await supabase
+    ? await service
         .from("users")
         .select("id, first_name, last_name")
         .in("id", colleagueIds)

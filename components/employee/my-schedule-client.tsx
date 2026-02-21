@@ -36,7 +36,7 @@ export type ColleagueRow = {
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00");
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function fmtTime(t: string) {
@@ -57,11 +57,11 @@ const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function swapBadge(shift: ShiftRow) {
   if (!shift.swapId) return null;
   const label =
-    shift.swapStatus === "pending" && shift.swapType === "direct"
+    shift.swapStatus === "pending_employee" && shift.swapType === "direct"
       ? "Swap sent"
-      : shift.swapStatus === "pending" && shift.swapType === "public"
+      : shift.swapStatus === "pending_employee" && shift.swapType === "public"
       ? "On board"
-      : shift.swapStatus === "accepted"
+      : shift.swapStatus === "accepted_by_employee" || shift.swapStatus === "pending_manager"
       ? "Mgr review"
       : null;
   if (!label) return null;

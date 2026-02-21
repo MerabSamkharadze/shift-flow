@@ -76,17 +76,17 @@ function MyStatusBadge({ swap }: { swap: MySwapRow }) {
   const { status, type } = swap;
 
   const [label, cls] = (() => {
-    if (status === "pending" && type === "direct")
+    if (status === "pending_employee" && type === "direct")
       return [
         "Awaiting response",
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
       ];
-    if (status === "pending" && type === "public")
+    if (status === "pending_employee" && type === "public")
       return [
         "On public board",
         "border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950 dark:text-violet-400",
       ];
-    if (status === "accepted")
+    if (status === "accepted_by_employee" || status === "pending_manager")
       return [
         "Awaiting manager approval",
         "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
@@ -96,7 +96,12 @@ function MyStatusBadge({ swap }: { swap: MySwapRow }) {
         "Approved",
         "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
       ];
-    if (status === "rejected") return ["Rejected", "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"];
+    if (status === "rejected_by_employee")
+      return ["Declined", "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"];
+    if (status === "rejected_by_manager")
+      return ["Rejected by manager", "border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-400"];
+    if (status === "cancelled")
+      return ["Cancelled", "text-muted-foreground"];
     return ["Expired", "text-muted-foreground"];
   })();
 
@@ -331,7 +336,7 @@ export function SwapsClient({
                         {fmtDateTime(s.createdAt)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {s.status === "pending" && (
+                        {s.status === "pending_employee" && (
                           <CancelButton swapId={s.id} />
                         )}
                       </td>

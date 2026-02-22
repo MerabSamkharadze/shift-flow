@@ -30,8 +30,8 @@ export default async function DashboardLayout({
     <div className="flex h-screen overflow-hidden bg-background">
       <Sidebar
         role={profile.role}
-        firstName={profile.first_name}
-        lastName={profile.last_name}
+        firstName={profile.first_name??''}
+        lastName={profile.last_name??''}
         email={profile.email}
       />
 

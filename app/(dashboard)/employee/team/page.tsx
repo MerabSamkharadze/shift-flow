@@ -143,8 +143,8 @@ export default async function TeamPage({
   // ── Assemble props ────────────────────────────────────────────────────────
   const members: TeamMemberRow[] = (memberUsers ?? []).map((u) => ({
     id: u.id,
-    firstName: u.first_name,
-    lastName: u.last_name,
+    firstName: u.first_name??'',
+    lastName: u.last_name??"",
   }));
 
   const teamShifts: TeamShiftRow[] = (shifts ?? []).map((s) => {

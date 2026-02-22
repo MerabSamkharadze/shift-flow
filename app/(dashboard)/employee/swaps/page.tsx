@@ -173,7 +173,7 @@ export default async function EmployeeSwapsPage() {
       id: s.id,
       type: s.type as "direct" | "public",
       status: s.status,
-      createdAt: s.requested_at,
+      createdAt: s.requested_at??'',
       shiftDate: shift.date,
       shiftStart: shift.startTime,
       shiftEnd: shift.endTime,
@@ -201,7 +201,7 @@ export default async function EmployeeSwapsPage() {
       shiftEnd: shift.endTime,
       groupName: shift.groupName,
       groupColor: shift.groupColor,
-      createdAt: s.requested_at,
+      createdAt: s.requested_at??'',
     };
   });
 
@@ -221,7 +221,7 @@ export default async function EmployeeSwapsPage() {
       shiftEnd: shift.endTime,
       groupName: shift.groupName,
       groupColor: shift.groupColor,
-      createdAt: s.requested_at,
+      createdAt: s.requested_at??'',
     };
   });
 

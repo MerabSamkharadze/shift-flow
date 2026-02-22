@@ -53,12 +53,12 @@ export default async function EmployeesPage() {
 
   const rows: EmployeeRow[] = (employees ?? []).map((e) => ({
     id: e.id,
-    firstName: e.first_name,
-    lastName: e.last_name,
+    firstName: e.first_name??'',
+    lastName: e.last_name??'',
     email: e.email,
     isActive: e.is_active,
     mustChangePassword: e.must_change_password,
-    createdAt: e.created_at,
+    createdAt: e.created_at??'',
     groups: groupsByEmployee.get(e.id) ?? [],
   }));
 

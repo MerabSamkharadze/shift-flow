@@ -167,8 +167,8 @@ export default async function EmployeePage({
 
   const colleagues: ColleagueRow[] = (colleagueUsers ?? []).map((u) => ({
     id: u.id,
-    firstName: u.first_name,
-    lastName: u.last_name,
+    firstName: u.first_name??'',
+    lastName: u.last_name??"",
     groupIds: colleagueGroupsMap.get(u.id) ?? [],
   }));
 

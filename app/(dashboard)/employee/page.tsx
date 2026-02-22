@@ -56,7 +56,7 @@ export default async function EmployeePage({
   // ── 1. Employee's shifts for the week ────────────────────────────────────────
   const { data: shifts } = await supabase
     .from("shifts")
-    .select("id, schedule_id, date, start_time, end_time, shift_template_id, shift_templates(color)")
+    .select("id, schedule_id, date, start_time, end_time, shift_template_id, shift_templates(color), extra_hours, extra_hours_notes")
     .eq("assigned_to", profile.id)
     .gte("date", weekStart)
     .lte("date", weekEnd)
@@ -157,6 +157,8 @@ export default async function EmployeePage({
       groupName: group.name,
       groupColor: group.color,
       templateColor,
+      extraHours: s.extra_hours ?? null,
+      extraHoursNotes: s.extra_hours_notes ?? null,
       swapId: swap?.id ?? null,
       swapStatus: swap?.status ?? null,
       swapType: (swap?.type as "direct" | "public") ?? null,

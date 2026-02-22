@@ -79,21 +79,34 @@ function StatusBadge({ status }: { status: SwapRow["status"] }) {
 
 function ApproveButton({ swapId }: { swapId: string }) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   return (
-    <button
-      disabled={isPending}
-      onClick={() =>
-        startTransition(async () => {
-          await approveSwap(swapId);
-          router.refresh();
-        })
-      }
-      className="text-xs font-medium text-emerald-700 hover:text-emerald-600 dark:text-emerald-400 transition-colors disabled:opacity-40"
-    >
-      {isPending ? "…" : "Approve"}
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            setError(null);
+            const result = await approveSwap(swapId);
+            if (result.error) {
+              setError(result.error);
+            } else {
+              router.refresh();
+            }
+          })
+        }
+        className="text-xs font-medium text-emerald-700 hover:text-emerald-600 dark:text-emerald-400 transition-colors disabled:opacity-40"
+      >
+        {isPending ? "…" : "Approve"}
+      </button>
+      {error && (
+        <span className="text-[10px] text-destructive max-w-[140px] text-right">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -103,6 +116,7 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
   const [tab, setTab] = useState<Tab>("pending");
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
   const [isRejecting, startReject] = useTransition();
   const router = useRouter();
 
@@ -118,10 +132,15 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
   function handleConfirmReject() {
     if (!rejectId) return;
     startReject(async () => {
-      await rejectSwap(rejectId, rejectNote);
-      setRejectId(null);
-      setRejectNote("");
-      router.refresh();
+      setRejectError(null);
+      const result = await rejectSwap(rejectId, rejectNote);
+      if (result.error) {
+        setRejectError(result.error);
+      } else {
+        setRejectId(null);
+        setRejectNote("");
+        router.refresh();
+      }
     });
   }
 
@@ -290,11 +309,15 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
             />
           </div>
 
+          {rejectError && (
+            <p className="text-sm text-destructive">{rejectError}</p>
+          )}
+
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setRejectId(null)}
+              onClick={() => { setRejectId(null); setRejectError(null); }}
               disabled={isRejecting}
             >
               Cancel

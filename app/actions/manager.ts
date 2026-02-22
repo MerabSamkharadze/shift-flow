@@ -270,32 +270,66 @@ export async function deactivateEmployee(employeeId: string) {
 // ─── Swap Requests ────────────────────────────────────────────────────────────
 
 export async function approveSwap(swapId: string) {
-  const { supabase, profile } = await getManagerProfile();
+  const { profile } = await getManagerProfile();
+  const service = createServiceClient();
   try {
-    const { error } = await supabase
+    // 1. Fetch the swap to get shift + recipient
+    const { data: swap, error: fetchError } = await service
       .from("shift_swaps")
-      .update({ status: "approved", approved_by: profile.id })
+      .select("id, shift_id, from_user_id, to_user_id, accepted_by, type")
       .eq("id", swapId)
-      .in("status", ["accepted_by_employee", "pending_manager"]);
+      .in("status", ["accepted_by_employee", "pending_manager"])
+      .single();
 
-    if (error) return { error: error.message };
+    if (fetchError) return { error: fetchError.message };
+    if (!swap) return { error: "Swap not found or no longer pending" };
+
+    // For direct swaps the recipient is to_user_id; for public it's accepted_by
+    const newAssignee =
+      swap.type === "direct" ? swap.to_user_id : swap.accepted_by;
+    if (!newAssignee) return { error: "No recipient found for this swap" };
+
+    // 2. Reassign the shift — only updates assigned_to + modified_by;
+    //    all other columns (extra_hours, extra_hours_notes, start_time,
+    //    end_time, shift_template_id, etc.) are preserved automatically.
+    const { error: shiftError } = await service
+      .from("shifts")
+      .update({ assigned_to: newAssignee, modified_by: profile.id })
+      .eq("id", swap.shift_id);
+
+    if (shiftError) return { error: shiftError.message };
+
+    // 3. Mark the swap approved
+    const { error: swapError } = await service
+      .from("shift_swaps")
+      .update({
+        status: "approved",
+        approved_by: profile.id,
+        manager_responded_at: new Date().toISOString(),
+      })
+      .eq("id", swapId);
+
+    if (swapError) return { error: swapError.message };
 
     revalidatePath("/manager/swaps");
+    revalidatePath("/manager/schedule");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 export async function rejectSwap(swapId: string, note?: string) {
-  const { supabase, profile } = await getManagerProfile();
+  const { profile } = await getManagerProfile();
+  const service = createServiceClient();
   try {
-    const { error } = await supabase
+    const { error } = await service
       .from("shift_swaps")
       .update({
         status: "rejected_by_manager",
         approved_by: profile.id,
         manager_notes: note?.trim() || null,
+        manager_responded_at: new Date().toISOString(),
       })
       .eq("id", swapId)
       .in("status", ["accepted_by_employee", "pending_manager"]);
@@ -304,7 +338,7 @@ export async function rejectSwap(swapId: string, note?: string) {
 
     revalidatePath("/manager/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }

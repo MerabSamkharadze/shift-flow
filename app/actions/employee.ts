@@ -37,18 +37,18 @@ function shiftDeadline(date: string, startTime: string): string {
 // ─── Swap creation ────────────────────────────────────────────────────────────
 
 export async function createDirectSwap(shiftId: string, toUserId: string) {
+  const { supabase, profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { supabase, profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     // Verify shift belongs to this employee; fetch date + start_time for deadline
-    const { data: shift } = await supabase
+    const { data: shift, error: shiftError } = await supabase
       .from("shifts")
       .select("id, date, start_time")
       .eq("id", shiftId)
       .eq("assigned_to", profile.id)
       .single();
 
+    if (shiftError) return { error: shiftError.message };
     if (!shift) return { error: "Shift not found" };
 
     const deadline = shiftDeadline(shift.date, shift.start_time);
@@ -82,24 +82,24 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
     revalidatePath("/employee");
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 export async function createPublicSwap(shiftId: string) {
+  const { supabase, profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { supabase, profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     // Verify shift belongs to this employee; fetch date + start_time for deadline
-    const { data: shift } = await supabase
+    const { data: shift, error: shiftError } = await supabase
       .from("shifts")
       .select("id, date, start_time")
       .eq("id", shiftId)
       .eq("assigned_to", profile.id)
       .single();
 
+    if (shiftError) return { error: shiftError.message };
     if (!shift) return { error: "Shift not found" };
 
     const deadline = shiftDeadline(shift.date, shift.start_time);
@@ -133,18 +133,17 @@ export async function createPublicSwap(shiftId: string) {
     revalidatePath("/employee");
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 // ─── Swap responses ───────────────────────────────────────────────────────────
 
 export async function acceptSwap(swapId: string) {
+  const { profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     const { error } = await service
       .from("shift_swaps")
       .update({ status: "accepted_by_employee" })
@@ -157,16 +156,15 @@ export async function acceptSwap(swapId: string) {
 
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 export async function rejectSwap(swapId: string) {
+  const { profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     const { error } = await service
       .from("shift_swaps")
       .update({ status: "rejected_by_employee" })
@@ -179,16 +177,15 @@ export async function rejectSwap(swapId: string) {
 
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 export async function cancelSwap(swapId: string) {
+  const { profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     const { error } = await service
       .from("shift_swaps")
       .update({ status: "cancelled" })
@@ -201,16 +198,15 @@ export async function cancelSwap(swapId: string) {
     revalidatePath("/employee");
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }
 
 export async function takePublicShift(swapId: string) {
+  const { supabase, profile } = await getEmployeeProfile();
+  const service = createServiceClient();
   try {
-    const { supabase, profile } = await getEmployeeProfile();
-    const service = createServiceClient();
-
     // Verify claimable (public, pending, not the requester's own)
     const { data: swap } = await supabase
       .from("shift_swaps")
@@ -233,7 +229,7 @@ export async function takePublicShift(swapId: string) {
 
     revalidatePath("/employee/swaps");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Something went wrong" };
   }
 }

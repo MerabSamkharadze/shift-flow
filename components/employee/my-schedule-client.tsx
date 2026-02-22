@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,8 @@ export type ShiftRow = {
   groupName: string;
   groupColor: string;
   templateColor: string;
+  extraHours: number | null;
+  extraHoursNotes: string | null;
   swapId: string | null;
   swapStatus: string | null;
   swapType: "direct" | "public" | null;
@@ -238,6 +240,20 @@ export function MyScheduleClient({
                           <div className="text-xs font-medium tabular-nums">
                             {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
                           </div>
+                          {shift.extraHours && shift.extraHours > 0 && (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                +{shift.extraHours}h OT
+                              </span>
+                              {shift.extraHoursNotes && (
+                                <Info
+                                  size={10}
+                                  className="text-amber-500 dark:text-amber-400 shrink-0"
+                                  title={shift.extraHoursNotes}
+                                />
+                              )}
+                            </div>
+                          )}
                           {swapBadge(shift) ?? (
                             <button
                               onClick={() => openDialog(shift)}
@@ -272,6 +288,11 @@ export function MyScheduleClient({
                 {" · "}
                 {fmtTime(dialogShift.startTime)}–{fmtTime(dialogShift.endTime)}
               </span>
+              {dialogShift.extraHours && dialogShift.extraHours > 0 && (
+                <span className="ml-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                  +{dialogShift.extraHours}h OT
+                </span>
+              )}
               <div className="flex items-center gap-1.5 mt-1">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
@@ -281,6 +302,11 @@ export function MyScheduleClient({
                   {dialogShift.groupName}
                 </span>
               </div>
+              {dialogShift.extraHoursNotes && (
+                <p className="mt-1 text-xs text-muted-foreground italic">
+                  &ldquo;{dialogShift.extraHoursNotes}&rdquo;
+                </p>
+              )}
             </div>
 
             {/* Option A — Direct */}

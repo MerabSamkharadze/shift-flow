@@ -27,6 +27,7 @@ export type MySwapRow = {
   groupName: string;
   groupColor: string;
   recipientName: string | null;
+  managerNotes: string | null;
 };
 
 export type IncomingSwapRow = {
@@ -61,6 +62,7 @@ export type MyClaimRow = {
   groupColor: string;
   status: string;
   claimedAt: string;
+  managerNotes: string | null;
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -260,6 +262,19 @@ function Empty({ message }: { message: string }) {
   );
 }
 
+// ─── Manager feedback box ─────────────────────────────────────────────────────
+
+function ManagerFeedback({ notes }: { notes: string }) {
+  return (
+    <div className="mt-3 rounded-xl bg-muted/60 border border-border px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+        Manager Feedback
+      </p>
+      <p className="text-sm italic text-foreground/80">{notes}</p>
+    </div>
+  );
+}
+
 // ─── Shift summary strip ──────────────────────────────────────────────────────
 
 function ShiftStrip({
@@ -413,6 +428,10 @@ export function SwapsClient({
                     groupName={s.groupName}
                     groupColor={s.groupColor}
                   />
+                  {s.managerNotes &&
+                    (s.status === "approved" || s.status === "rejected_by_manager") && (
+                      <ManagerFeedback notes={s.managerNotes} />
+                    )}
                   <div className="mt-3">
                     <ClaimStatusBadge status={s.status} />
                   </div>
@@ -464,6 +483,10 @@ export function SwapsClient({
                     groupName={s.groupName}
                     groupColor={s.groupColor}
                   />
+                  {s.managerNotes &&
+                    (s.status === "approved" || s.status === "rejected_by_manager") && (
+                      <ManagerFeedback notes={s.managerNotes} />
+                    )}
                   {s.status === "pending_employee" && (
                     <div className="flex justify-end mt-2">
                       <CancelButton swapId={s.id} />

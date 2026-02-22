@@ -40,7 +40,7 @@ export default async function EmployeeSwapsPage() {
   // ── 2. My swap requests (giveaways I initiated) ───────────────────────────
   const { data: mySwapRows } = await service
     .from("shift_swaps")
-    .select("id, shift_id, to_user_id, accepted_by, type, status, requested_at")
+    .select("id, shift_id, to_user_id, accepted_by, type, status, requested_at, manager_notes")
     .eq("from_user_id", profile.id)
     .order("requested_at", { ascending: false });
 
@@ -67,7 +67,7 @@ export default async function EmployeeSwapsPage() {
   // ── 5. My claims — public swaps I already claimed (accepted_by = me) ──────
   const { data: myClaimRows } = await service
     .from("shift_swaps")
-    .select("id, shift_id, from_user_id, status, requested_at")
+    .select("id, shift_id, from_user_id, status, requested_at, manager_notes")
     .eq("accepted_by", profile.id)
     .eq("type", "public")
     .in("status", ["accepted_by_employee", "pending_manager", "approved", "rejected_by_manager"])
@@ -190,6 +190,7 @@ export default async function EmployeeSwapsPage() {
       recipientName: (s.to_user_id ?? s.accepted_by)
         ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? null)
         : null,
+      managerNotes: s.manager_notes ?? null,
     };
   });
 
@@ -233,6 +234,7 @@ export default async function EmployeeSwapsPage() {
       groupColor: shift.groupColor,
       status: s.status,
       claimedAt: s.requested_at ?? "",
+      managerNotes: s.manager_notes ?? null,
     };
   });
 

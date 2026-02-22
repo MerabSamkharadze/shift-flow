@@ -15,6 +15,7 @@ type Template = {
   name: string;
   start_time: string;
   end_time: string;
+  color: string | null;
 };
 
 type Member = {
@@ -168,7 +169,15 @@ export function GroupDetailTabs({
                           : ""
                       }
                     >
-                      <td className="px-4 py-3 font-medium">{t.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: t.color ?? "#3b82f6" }}
+                          />
+                          <span className="font-medium">{t.name}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {fmt(t.start_time)}
                       </td>

@@ -102,6 +102,7 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
     const name = (formData.get("name") as string)?.trim();
     const startTime = formData.get("start_time") as string;
     const endTime = formData.get("end_time") as string;
+    const color = (formData.get("color") as string) || "#3b82f6";
 
     if (!name) return { error: "Template name is required" };
     if (!startTime || !endTime) return { error: "Start and end time are required" };
@@ -121,6 +122,7 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
       name,
       start_time: startTime,
       end_time: endTime,
+      color,
     });
 
     if (error) return { error: error.message };

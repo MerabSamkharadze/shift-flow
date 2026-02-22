@@ -26,6 +26,7 @@ export type TemplateRow = {
   name: string;
   startTime: string;
   endTime: string;
+  color: string;
 };
 export type ShiftRow = {
   id: string;
@@ -363,6 +364,7 @@ export function ScheduleClient({
 
     const template = shift.templateId ? templateMap.get(shift.templateId) : null;
     const isOptimistic = shift.id.startsWith("opt-");
+    const color = template?.color ?? "#3b82f6";
 
     return (
       <button
@@ -375,16 +377,16 @@ export function ScheduleClient({
         )}
       >
         <div
-          className="rounded px-1.5 py-1 h-full"
-          style={{ backgroundColor: selectedGroup.color + "20" }}
+          className="rounded border-l-4 px-1.5 py-1 h-full"
+          style={{
+            backgroundColor: `${color}1a`,
+            borderLeftColor: color,
+          }}
         >
-          <div
-            className="text-[10px] font-medium truncate"
-            style={{ color: selectedGroup.color }}
-          >
+          <div className="text-[10px] font-medium truncate text-foreground">
             {template?.name ?? "Custom"}
           </div>
-          <div className="text-[10px] tabular-nums text-foreground/80 mt-0.5">
+          <div className="text-[10px] tabular-nums text-foreground/70 mt-0.5">
             {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
           </div>
           {shift.notes && (
@@ -556,17 +558,30 @@ export function ScheduleClient({
                 No shift templates yet. Add them in group settings.
               </p>
             ) : (
-              <select
-                value={selectedTemplateId}
-                onChange={(e) => setSelectedTemplateId(e.target.value)}
-                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
+              <div className="space-y-1.5">
                 {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({fmtTime(t.startTime)}–{fmtTime(t.endTime)})
-                  </option>
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTemplateId(t.id)}
+                    className={cn(
+                      "w-full flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-all text-left",
+                      selectedTemplateId === t.id
+                        ? "border-primary ring-1 ring-primary"
+                        : "border-border hover:border-muted-foreground/40",
+                    )}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0"
+                      style={{ backgroundColor: t.color }}
+                    />
+                    <span className="font-medium">{t.name}</span>
+                    <span className="ml-auto tabular-nums text-muted-foreground">
+                      {fmtTime(t.startTime)}–{fmtTime(t.endTime)}
+                    </span>
+                  </button>
                 ))}
-              </select>
+              </div>
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={closeDialog}>
@@ -657,17 +672,30 @@ export function ScheduleClient({
               {fmtShortDate(dialog.shift.date)} ·{" "}
               {fmtTime(dialog.shift.startTime)}–{fmtTime(dialog.shift.endTime)}
             </p>
-            <select
-              value={selectedTemplateId}
-              onChange={(e) => setSelectedTemplateId(e.target.value)}
-              className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-            >
+            <div className="space-y-1.5">
               {templates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({fmtTime(t.startTime)}–{fmtTime(t.endTime)})
-                </option>
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setSelectedTemplateId(t.id)}
+                  className={cn(
+                    "w-full flex items-center gap-3 rounded-md border px-3 py-2.5 text-sm transition-all text-left",
+                    selectedTemplateId === t.id
+                      ? "border-primary ring-1 ring-primary"
+                      : "border-border hover:border-muted-foreground/40",
+                  )}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <span className="font-medium">{t.name}</span>
+                  <span className="ml-auto tabular-nums text-muted-foreground">
+                    {fmtTime(t.startTime)}–{fmtTime(t.endTime)}
+                  </span>
+                </button>
               ))}
-            </select>
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="outline"

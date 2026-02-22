@@ -95,7 +95,7 @@ export default async function SchedulePage({
   // ── 2. Shift templates for selected group ────────────────────────────────
   const { data: templatesRaw } = await supabase
     .from("shift_templates")
-    .select("id, name, start_time, end_time")
+    .select("id, name, start_time, end_time, color")
     .eq("group_id", selectedGroupId)
     .order("start_time");
 
@@ -104,6 +104,7 @@ export default async function SchedulePage({
     name: t.name,
     startTime: t.start_time,
     endTime: t.end_time,
+    color: t.color ?? "#3b82f6",
   }));
 
   // ── 3. Members of selected group ─────────────────────────────────────────

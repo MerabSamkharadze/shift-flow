@@ -194,6 +194,7 @@ export interface Database {
           name: string
           start_time: string // "HH:MM:SS"
           end_time: string
+          color: string | null
           created_at: string
         }
         Insert: {
@@ -202,6 +203,7 @@ export interface Database {
           name: string
           start_time: string
           end_time: string
+          color?: string | null
           created_at?: string
         }
         Update: {
@@ -210,6 +212,7 @@ export interface Database {
           name?: string
           start_time?: string
           end_time?: string
+          color?: string | null
         }
         Relationships: [
           {

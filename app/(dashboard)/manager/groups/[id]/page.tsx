@@ -37,7 +37,7 @@ export default async function GroupDetailPage({
   // Shift templates
   const { data: templates } = await supabase
     .from("shift_templates")
-    .select("id, name, start_time, end_time")
+    .select("id, name, start_time, end_time, color")
     .eq("group_id", group.id)
     .order("start_time", { ascending: true });
 

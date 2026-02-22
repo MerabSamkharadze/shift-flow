@@ -13,8 +13,8 @@ import { createDirectSwap, createPublicSwap } from "@/app/actions/employee";
 
 export type ShiftRow = {
   id: string;
-  date: string;       // YYYY-MM-DD
-  startTime: string;  // HH:MM:SS
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:MM:SS
   endTime: string;
   groupId: string;
   groupName: string;
@@ -63,10 +63,11 @@ function swapBadge(shift: ShiftRow) {
     shift.swapStatus === "pending_employee" && shift.swapType === "direct"
       ? "Swap sent"
       : shift.swapStatus === "pending_employee" && shift.swapType === "public"
-      ? "On board"
-      : shift.swapStatus === "accepted_by_employee" || shift.swapStatus === "pending_manager"
-      ? "Mgr review"
-      : null;
+        ? "On board"
+        : shift.swapStatus === "accepted_by_employee" ||
+            shift.swapStatus === "pending_manager"
+          ? "Mgr review"
+          : null;
   if (!label) return null;
   return (
     <Badge
@@ -246,11 +247,12 @@ export function MyScheduleClient({
                                 +{shift.extraHours}h OT
                               </span>
                               {shift.extraHoursNotes && (
-                                <Info
-                                  size={10}
-                                  className="text-amber-500 dark:text-amber-400 shrink-0"
-                                  title={shift.extraHoursNotes}
-                                />
+                                <span title={shift.extraHoursNotes}>
+                                  <Info
+                                    size={10}
+                                    className="text-amber-500 dark:text-amber-400 shrink-0"
+                                  />
+                                </span>
                               )}
                             </div>
                           )}
@@ -283,7 +285,9 @@ export function MyScheduleClient({
           <div className="space-y-4">
             {/* Shift summary */}
             <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <span className="font-medium">{fmtShortDate(dialogShift.date)}</span>
+              <span className="font-medium">
+                {fmtShortDate(dialogShift.date)}
+              </span>
               <span className="text-muted-foreground">
                 {" · "}
                 {fmtTime(dialogShift.startTime)}–{fmtTime(dialogShift.endTime)}
@@ -383,7 +387,9 @@ export function MyScheduleClient({
                     <span className="w-2 h-2 rounded-full bg-primary" />
                   )}
                 </span>
-                <span className="text-sm font-medium">Post to public board</span>
+                <span className="text-sm font-medium">
+                  Post to public board
+                </span>
               </div>
               {mode === "public" && (
                 <p className="text-xs text-muted-foreground mt-1 ml-6">

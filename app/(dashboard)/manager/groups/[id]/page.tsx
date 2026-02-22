@@ -76,9 +76,13 @@ export default async function GroupDetailPage({
     .eq("is_active", true)
     .order("first_name");
 
-  const available = (allEmployees ?? []).filter(
-    (e) => !memberUserIds.has(e.id),
-  );
+  const available = (allEmployees ?? [])
+      .filter((e) => !memberUserIds.has(e.id))
+      .map((e) => ({
+        ...e,
+        first_name: e.first_name ?? "", // თუ null-ია, ჩაწერს ცარიელ სტრინგს
+        last_name: e.last_name ?? "",   // თუ null-ია, ჩაწერს ცარიელ სტრინგს
+      }));
 
   return (
     <div>

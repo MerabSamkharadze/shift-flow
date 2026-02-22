@@ -19,28 +19,37 @@ export default async function ManagersPage() {
 
   if (!profile || profile.role !== "owner") redirect("/owner");
 
-  const { data: managers } = await supabase
-    .from("users")
-    .select(
-      "id, first_name, last_name, email, is_active, must_change_password, created_at",
-    )
-    .eq("company_id", profile.company_id)
-    .eq("role", "manager")
-    .order("created_at", { ascending: false });
+
+
+  const { data: managersData } = await supabase
+      .from("users")
+      .select(
+          "id, first_name, last_name, email, is_active, must_change_password, created_at",
+      )
+      .eq("company_id", profile.company_id)
+      .eq("role", "manager")
+      .order("created_at", { ascending: false });
+
+  // მონაცემების "გასუფთავება" null-ებისგან
+  const managers = (managersData ?? []).map((m) => ({
+    ...m,
+    first_name: m.first_name ?? "",
+    last_name: m.last_name ?? "",
+  }));
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Managers</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Invite and manage your company&apos;s managers.
-          </p>
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Managers</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              Invite and manage your company&apos;s managers.
+            </p>
+          </div>
+          <InviteManagerDialog />
         </div>
-        <InviteManagerDialog />
-      </div>
 
-      <ManagersTable managers={managers ?? []} />
-    </div>
+        <ManagersTable managers={managers} />
+      </div>
   );
 }

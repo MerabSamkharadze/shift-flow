@@ -105,7 +105,7 @@ export default async function SwapsPage() {
       id: s.id,
       type: s.type as SwapRow["type"],
       status: s.status as SwapRow["status"],
-      createdAt: s.requested_at,
+      createdAt: s.requested_at??'',
       managerNote: s.manager_notes,
       shiftDate: shift?.date ?? "",
       shiftStart: shift?.start_time ?? "",

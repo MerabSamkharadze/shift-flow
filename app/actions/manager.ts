@@ -28,8 +28,8 @@ async function getManagerProfile() {
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
 export async function createGroup(formData: FormData) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
     const name = (formData.get("name") as string)?.trim();
     const color = (formData.get("color") as string) || "#6366f1";
 
@@ -56,9 +56,8 @@ export async function createGroup(formData: FormData) {
 }
 
 export async function deleteGroup(groupId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { error } = await supabase
       .from("groups")
       .delete()
@@ -74,11 +73,32 @@ export async function deleteGroup(groupId: string) {
   }
 }
 
+export async function updateGroup(groupId: string, name: string) {
+  const { supabase, profile } = await getManagerProfile();
+  try {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: "Group name is required" };
+
+    const { error } = await supabase
+      .from("groups")
+      .update({ name: trimmed })
+      .eq("id", groupId)
+      .eq("manager_id", profile.id);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/manager/groups");
+    return { error: null };
+  } catch {
+    return { error: "Something went wrong" };
+  }
+}
+
 // ─── Shift Templates ──────────────────────────────────────────────────────────
 
 export async function createShiftTemplate(groupId: string, formData: FormData) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
     const name = (formData.get("name") as string)?.trim();
     const startTime = formData.get("start_time") as string;
     const endTime = formData.get("end_time") as string;
@@ -113,9 +133,8 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
 }
 
 export async function deleteShiftTemplate(templateId: string, groupId: string) {
+  const { supabase } = await getManagerProfile();
   try {
-    const { supabase } = await getManagerProfile();
-
     const { error } = await supabase
       .from("shift_templates")
       .delete()
@@ -133,9 +152,8 @@ export async function deleteShiftTemplate(templateId: string, groupId: string) {
 // ─── Group Members ────────────────────────────────────────────────────────────
 
 export async function addGroupMember(groupId: string, userId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { data: group } = await supabase
       .from("groups")
       .select("id")
@@ -163,9 +181,8 @@ export async function addGroupMember(groupId: string, userId: string) {
 }
 
 export async function removeGroupMember(memberId: string, groupId: string) {
+  const { supabase } = await getManagerProfile();
   try {
-    const { supabase } = await getManagerProfile();
-
     const { error } = await supabase
       .from("group_members")
       .delete()
@@ -183,9 +200,8 @@ export async function removeGroupMember(memberId: string, groupId: string) {
 // ─── Employees ────────────────────────────────────────────────────────────────
 
 export async function inviteEmployee(formData: FormData) {
+  const { profile } = await getManagerProfile();
   try {
-    const { profile } = await getManagerProfile();
-
     const firstName = (formData.get("first_name") as string)?.trim();
     const lastName = (formData.get("last_name") as string)?.trim();
     const email = (formData.get("email") as string)?.trim().toLowerCase();
@@ -229,8 +245,8 @@ export async function inviteEmployee(formData: FormData) {
 }
 
 export async function deactivateEmployee(employeeId: string) {
+  const { profile } = await getManagerProfile();
   try {
-    const { profile } = await getManagerProfile();
     const service = createServiceClient();
 
     const { error } = await service
@@ -252,9 +268,8 @@ export async function deactivateEmployee(employeeId: string) {
 // ─── Swap Requests ────────────────────────────────────────────────────────────
 
 export async function approveSwap(swapId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { error } = await supabase
       .from("shift_swaps")
       .update({ status: "approved", approved_by: profile.id })
@@ -271,9 +286,8 @@ export async function approveSwap(swapId: string) {
 }
 
 export async function rejectSwap(swapId: string, note?: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { error } = await supabase
       .from("shift_swaps")
       .update({

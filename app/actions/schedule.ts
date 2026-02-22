@@ -27,9 +27,8 @@ async function getManagerProfile() {
 // ─── Schedule lifecycle ───────────────────────────────────────────────────────
 
 export async function createSchedule(groupId: string, weekStart: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     // Verify ownership in same query via inner join
     const { data: group } = await supabase
       .from("groups")
@@ -70,9 +69,8 @@ export async function createSchedule(groupId: string, weekStart: string) {
 
 // Single action: verify ownership + fetch prev shifts + create + copy in 4 queries
 export async function copyFromLastWeek(groupId: string, weekStart: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const prevStart = (() => {
       const d = new Date(weekStart + "T00:00:00");
       d.setDate(d.getDate() - 7);
@@ -159,9 +157,8 @@ export async function copyFromLastWeek(groupId: string, weekStart: string) {
 }
 
 export async function publishSchedule(scheduleId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     // Verify ownership + get status in one query via inner join
     const { data: schedule } = await supabase
       .from("schedules")
@@ -197,9 +194,8 @@ export async function addShift(
   date: string,
   templateId: string,
 ) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     // Query 2: verify schedule ownership + fetch template in parallel
     const [scheduleRes, templateRes] = await Promise.all([
       supabase
@@ -246,9 +242,8 @@ export async function addShift(
 }
 
 export async function updateShift(shiftId: string, templateId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { data: template } = await supabase
       .from("shift_templates")
       .select("start_time, end_time")
@@ -278,9 +273,8 @@ export async function updateShift(shiftId: string, templateId: string) {
 }
 
 export async function removeShift(shiftId: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     // Set modified_by before delete so the DELETE trigger can read OLD.modified_by
     await supabase
       .from("shifts")
@@ -299,9 +293,8 @@ export async function removeShift(shiftId: string) {
 }
 
 export async function addShiftNote(shiftId: string, note: string) {
+  const { supabase, profile } = await getManagerProfile();
   try {
-    const { supabase, profile } = await getManagerProfile();
-
     const { error } = await supabase
       .from("shifts")
       .update({ notes: note.trim() || null, modified_by: profile.id })

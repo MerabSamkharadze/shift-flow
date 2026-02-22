@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { CreateGroupDialog } from "@/components/manager/create-group-dialog";
+import { GroupRowActions } from "@/components/manager/group-row-actions";
 
 export default async function GroupsPage() {
   const supabase = createClient();
@@ -46,25 +47,32 @@ export default async function GroupsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {groups.map((g) => (
-            <Link
+            <div
               key={g.id}
-              href={`/manager/groups/${g.id}`}
-              className="block rounded-lg border border-border bg-card p-5 hover:border-primary/40 hover:shadow-sm transition-all"
+              className="relative rounded-lg border border-border bg-card hover:border-primary/40 hover:shadow-sm transition-all"
             >
-              <div className="flex items-center gap-2.5 mb-3">
-                <span
-                  className="w-3 h-3 rounded-full shrink-0"
-                  style={{ backgroundColor: g.color }}
-                />
-                <span className="font-semibold">{g.name}</span>
+              <Link
+                href={`/manager/groups/${g.id}`}
+                className="block p-5 pr-10"
+              >
+                <div className="flex items-center gap-2.5 mb-3">
+                  <span
+                    className="w-3 h-3 rounded-full shrink-0"
+                    style={{ backgroundColor: g.color }}
+                  />
+                  <span className="font-semibold">{g.name}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {g.group_members.length}{" "}
+                  {g.group_members.length === 1 ? "member" : "members"} ·{" "}
+                  {g.shift_templates.length}{" "}
+                  {g.shift_templates.length === 1 ? "template" : "templates"}
+                </p>
+              </Link>
+              <div className="absolute top-3 right-3">
+                <GroupRowActions groupId={g.id} groupName={g.name} />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {g.group_members.length}{" "}
-                {g.group_members.length === 1 ? "member" : "members"} ·{" "}
-                {g.shift_templates.length}{" "}
-                {g.shift_templates.length === 1 ? "template" : "templates"}
-              </p>
-            </Link>
+            </div>
           ))}
         </div>
       )}

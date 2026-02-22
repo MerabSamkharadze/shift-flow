@@ -8,9 +8,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Users, Briefcase, LayoutGrid, ArrowLeftRight } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Users,
+  Briefcase,
+  LayoutGrid,
+  ArrowLeftRight,
+  Activity,
+  UserPlus,
+  ChevronRight,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("en-US", {
@@ -19,6 +31,80 @@ function fmtDate(d: string) {
     year: "numeric",
   });
 }
+
+function fmtRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  swap_approved: "approved a swap",
+  swap_rejected: "rejected a swap",
+  schedule_published: "published a schedule",
+  schedule_locked: "locked a schedule",
+  schedule_archived: "archived a schedule",
+  employee_added: "added an employee",
+  manager_invited: "invited a manager",
+  manager_deactivated: "deactivated a manager",
+  group_created: "created a group",
+  group_updated: "updated a group",
+  shift_updated: "updated a shift",
+};
+
+function formatActivity(action: string, actorName: string): string {
+  const label = ACTION_LABELS[action] ?? action.replace(/_/g, " ");
+  return `${actorName} ${label}`;
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+
+function Avatar({ name, size = "sm" }: { name: string; size?: "sm" | "md" }) {
+  const initials = name
+    .split(" ")
+    .map((n) => n[0] ?? "")
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <div
+      className={cn(
+        "shrink-0 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary",
+        size === "sm" ? "w-7 h-7 text-[10px]" : "w-9 h-9 text-xs",
+      )}
+    >
+      {initials || "?"}
+    </div>
+  );
+}
+
+type ManagerStatus = "active" | "pending" | "inactive";
+
+function StatusBadge({ status }: { status: ManagerStatus }) {
+  return (
+    <Badge
+      variant="outline"
+      className={cn(
+        status === "active" &&
+          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
+        status === "pending" &&
+          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
+        status === "inactive" && "text-muted-foreground",
+      )}
+    >
+      {status === "active" && "Active"}
+      {status === "pending" && "Invite pending"}
+      {status === "inactive" && "Inactive"}
+    </Badge>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function OwnerDashboardPage() {
   const supabase = createClient();
@@ -38,7 +124,7 @@ export default async function OwnerDashboardPage() {
   if (!profile) redirect("/auth/signout");
   if (profile.role !== "owner") redirect(`/${profile.role}`);
 
-  // ── 1. Counts ─────────────────────────────────────────────────────────────
+  // ── 1. Stat counts ─────────────────────────────────────────────────────────
   const [
     { count: managerCount },
     { count: employeeCount },
@@ -63,8 +149,7 @@ export default async function OwnerDashboardPage() {
       .eq("is_active", true),
   ]);
 
-  // ── 2. Pending swaps (company-wide) ───────────────────────────────────────
-  // Get all shift IDs in this company via schedules → groups → company
+  // ── 2. Pending swaps (company-wide via schedules chain) ────────────────────
   const { data: companyGroups } = await service
     .from("groups")
     .select("id")
@@ -90,34 +175,60 @@ export default async function OwnerDashboardPage() {
 
   const companyShiftIds = (companyShifts ?? []).map((s) => s.id);
 
-  const { data: pendingSwaps, count: pendingSwapCount } = companyShiftIds.length
-    ? await service
-        .from("shift_swaps")
-        .select("id, shift_id, from_user_id, to_user_id, accepted_by, requested_at", {
-          count: "exact",
-        })
-        .in("shift_id", companyShiftIds)
-        .in("status", ["accepted_by_employee", "pending_manager"])
-        .order("requested_at", { ascending: false })
-        .limit(5)
-    : { data: [] as { id: string; shift_id: string; from_user_id: string; to_user_id: string | null; accepted_by: string | null; requested_at: string | null }[], count: 0 };
+  const { data: pendingSwaps, count: pendingSwapCount } =
+    companyShiftIds.length
+      ? await service
+          .from("shift_swaps")
+          .select(
+            "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
+            { count: "exact" },
+          )
+          .in("shift_id", companyShiftIds)
+          .in("status", ["accepted_by_employee", "pending_manager"])
+          .order("requested_at", { ascending: false })
+          .limit(5)
+      : {
+          data: [] as {
+            id: string;
+            shift_id: string;
+            from_user_id: string;
+            to_user_id: string | null;
+            accepted_by: string | null;
+            requested_at: string | null;
+          }[],
+          count: 0,
+        };
 
-  // ── 3. Recent managers ────────────────────────────────────────────────────
-  const { data: recentManagers } = await service
+  // ── 3. Managers list ───────────────────────────────────────────────────────
+  const { data: managersData } = await service
     .from("users")
-    .select("id, first_name, last_name, email, created_at")
+    .select("id, first_name, last_name, email, is_active, must_change_password, created_at")
     .eq("company_id", profile.company_id)
     .eq("role", "manager")
-    .eq("is_active", true)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(6);
 
-  // ── 4. User names for pending swaps ───────────────────────────────────────
+  const managers = (managersData ?? []).map((m) => ({
+    ...m,
+    first_name: m.first_name ?? "",
+    last_name: m.last_name ?? "",
+    status: (!m.is_active
+      ? "inactive"
+      : m.must_change_password
+        ? "pending"
+        : "active") as ManagerStatus,
+  }));
+
+  // ── 4. User names for pending swaps ────────────────────────────────────────
   const swapUserIds = [
     ...new Set([
       ...(pendingSwaps ?? []).map((s) => s.from_user_id),
-      ...(pendingSwaps ?? []).map((s) => s.to_user_id).filter((id): id is string => id !== null),
-      ...(pendingSwaps ?? []).map((s) => s.accepted_by).filter((id): id is string => id !== null),
+      ...(pendingSwaps ?? [])
+        .map((s) => s.to_user_id)
+        .filter((id): id is string => id !== null),
+      ...(pendingSwaps ?? [])
+        .map((s) => s.accepted_by)
+        .filter((id): id is string => id !== null),
     ]),
   ];
 
@@ -126,23 +237,101 @@ export default async function OwnerDashboardPage() {
         .from("users")
         .select("id, first_name, last_name")
         .in("id", swapUserIds)
-    : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+    : {
+        data: [] as {
+          id: string;
+          first_name: string | null;
+          last_name: string | null;
+        }[],
+      };
 
   const swapUserMap = new Map(
-    (swapUsers ?? []).map((u) => [u.id, `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim()]),
+    (swapUsers ?? []).map((u) => [
+      u.id,
+      `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
+    ]),
   );
 
-  // ── Stats ─────────────────────────────────────────────────────────────────
-  const stats = [
-    { label: "Managers", value: managerCount ?? 0, icon: Briefcase, href: "/owner/managers" },
-    { label: "Employees", value: employeeCount ?? 0, icon: Users, href: null },
-    { label: "Active Groups", value: groupCount ?? 0, icon: LayoutGrid, href: null },
-    { label: "Pending Swaps", value: pendingSwapCount ?? 0, icon: ArrowLeftRight, href: null },
+  // ── 5. Recent activity logs ────────────────────────────────────────────────
+  const { data: activityLogs } = await service
+    .from("activity_logs")
+    .select("id, user_id, action, entity_type, created_at")
+    .eq("company_id", profile.company_id)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  const actorIds = [
+    ...new Set((activityLogs ?? []).map((l) => l.user_id)),
   ];
 
+  const { data: actorUsers } = actorIds.length
+    ? await service
+        .from("users")
+        .select("id, first_name, last_name")
+        .in("id", actorIds)
+    : {
+        data: [] as {
+          id: string;
+          first_name: string | null;
+          last_name: string | null;
+        }[],
+      };
+
+  const actorMap = new Map(
+    (actorUsers ?? []).map((u) => [
+      u.id,
+      `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
+    ]),
+  );
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const stats = [
+    {
+      label: "Total Employees",
+      value: employeeCount ?? 0,
+      icon: Users,
+      href: null,
+    },
+    {
+      label: "Active Managers",
+      value: managerCount ?? 0,
+      icon: Briefcase,
+      href: "/owner/managers",
+    },
+    {
+      label: "Active Groups",
+      value: groupCount ?? 0,
+      icon: LayoutGrid,
+      href: null,
+    },
+    {
+      label: "Pending Swaps",
+      value: pendingSwapCount ?? 0,
+      icon: ArrowLeftRight,
+      href: null,
+    },
+  ];
+
+  // ─── Quick access links ────────────────────────────────────────────────────
+  const quickLinks = [
+    {
+      label: "Manage Managers",
+      description: "Invite, activate or deactivate managers",
+      href: "/owner/managers",
+      icon: Briefcase,
+    },
+    {
+      label: "Add Manager",
+      description: "Invite a new manager to the company",
+      href: "/owner/managers",
+      icon: UserPlus,
+    },
+  ];
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="space-y-8">
-      {/* Header */}
+      {/* Page header */}
       <div>
         <h1 className="text-2xl font-bold">
           Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
@@ -152,7 +341,7 @@ export default async function OwnerDashboardPage() {
         </p>
       </div>
 
-      {/* Stats row */}
+      {/* ── Stats ─────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map(({ label, value, icon: Icon, href }) => (
           <Card key={label}>
@@ -165,7 +354,7 @@ export default async function OwnerDashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">{value}</p>
+              <p className="text-3xl font-bold tabular-nums">{value}</p>
               {href && (
                 <Link
                   href={href}
@@ -179,55 +368,80 @@ export default async function OwnerDashboardPage() {
         ))}
       </div>
 
+      {/* ── Managers + Pending Swaps ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Managers */}
+        {/* Manager list */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">Managers</CardTitle>
+              <CardTitle className="text-base font-semibold">
+                Managers
+              </CardTitle>
               <Link
                 href="/owner/managers"
-                className="text-xs text-primary hover:underline"
+                className="text-xs text-primary hover:underline flex items-center gap-0.5"
               >
-                Manage
+                Manage <ChevronRight size={12} />
               </Link>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            {(recentManagers ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
+            {managers.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
                 No managers yet.
               </p>
             ) : (
-              <ul className="divide-y divide-border">
-                {(recentManagers ?? []).map((m) => (
-                  <li key={m.id} className="flex items-center gap-3 py-2.5">
-                    <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <span className="text-xs font-semibold text-primary">
-                        {(m.first_name?.[0] ?? m.email[0]).toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">
-                        {m.first_name && m.last_name
-                          ? `${m.first_name} ${m.last_name}`
-                          : m.email}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {m.email}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                      {fmtDate(m.created_at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40">
+                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs">
+                        Name
+                      </th>
+                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs hidden sm:table-cell">
+                        Email
+                      </th>
+                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {managers.map((m, i) => (
+                      <tr
+                        key={m.id}
+                        className={cn(
+                          "transition-colors hover:bg-muted/30",
+                          i !== managers.length - 1 &&
+                            "border-b border-border",
+                        )}
+                      >
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <Avatar
+                              name={`${m.first_name} ${m.last_name}`}
+                            />
+                            <span className="font-medium text-sm truncate max-w-[100px]">
+                              {m.first_name} {m.last_name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs truncate max-w-[140px] hidden sm:table-cell">
+                          {m.email}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <StatusBadge status={m.status} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Company-wide Pending Swaps */}
+        {/* Pending swaps */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">
@@ -236,7 +450,7 @@ export default async function OwnerDashboardPage() {
           </CardHeader>
           <CardContent className="pt-0">
             {(pendingSwaps ?? []).length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
+              <p className="text-sm text-muted-foreground py-6 text-center">
                 No swap requests pending approval.
               </p>
             ) : (
@@ -244,7 +458,7 @@ export default async function OwnerDashboardPage() {
                 {(pendingSwaps ?? []).map((swap) => {
                   const recipientId = swap.to_user_id ?? swap.accepted_by;
                   return (
-                    <li key={swap.id} className="py-2.5">
+                    <li key={swap.id} className="py-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm">
                           <span className="font-medium">
@@ -277,6 +491,84 @@ export default async function OwnerDashboardPage() {
                 +{(pendingSwapCount ?? 0) - 5} more pending across the company
               </p>
             )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Activity Feed + Quick Access ───────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Activity */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <Activity size={15} className="text-muted-foreground" />
+              <CardTitle className="text-base font-semibold">
+                Recent Activity
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            {(activityLogs ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                No activity recorded yet.
+              </p>
+            ) : (
+              <ul className="space-y-3">
+                {(activityLogs ?? []).map((log) => {
+                  const actorName = actorMap.get(log.user_id) ?? "Someone";
+                  return (
+                    <li key={log.id} className="flex items-start gap-3">
+                      <Avatar name={actorName} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm leading-snug">
+                          {formatActivity(log.action, actorName)}
+                        </p>
+                        {log.entity_type && (
+                          <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                            {log.entity_type.replace(/_/g, " ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
+                        {fmtRelative(log.created_at)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick Access */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">
+              Quick Access
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-2">
+            {quickLinks.map(({ label, description, href, icon: Icon }) => (
+              <Link
+                key={label}
+                href={href}
+                className="flex items-center gap-4 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-border/80 group"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+                  <Icon size={16} className="text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {description}
+                  </p>
+                </div>
+                <ChevronRight
+                  size={16}
+                  className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0"
+                />
+              </Link>
+            ))}
           </CardContent>
         </Card>
       </div>

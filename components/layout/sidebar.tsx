@@ -1,5 +1,6 @@
 import { NavLinks } from "./nav-links";
 import { LogoutButton } from "./logout-button";
+import { NotificationBell } from "./notification-bell";
 import type { UserRole } from "@/lib/types";
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -13,6 +14,7 @@ type Props = {
   firstName: string;
   lastName: string;
   email: string;
+  userId: string;
 };
 
 function Avatar({ firstName, lastName }: { firstName: string; lastName: string }) {
@@ -24,12 +26,13 @@ function Avatar({ firstName, lastName }: { firstName: string; lastName: string }
   );
 }
 
-export function Sidebar({ role, firstName, lastName, email }: Props) {
+export function Sidebar({ role, firstName, lastName, email, userId }: Props) {
   return (
     <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r border-border bg-background">
       {/* Logo */}
-      <div className="flex h-14 items-center border-b border-border px-5">
+      <div className="flex h-14 items-center justify-between border-b border-border px-5">
         <span className="text-base font-bold tracking-tight">ShiftFlow</span>
+        <NotificationBell userId={userId} />
       </div>
 
       {/* Navigation */}

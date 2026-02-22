@@ -174,11 +174,10 @@ export default async function EmployeePage({
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">My Schedule</h1>
+      <div className="mb-5">
+        <h1 className="text-xl font-bold">My Schedule</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          Your shifts for the week. Click &ldquo;Give Away&rdquo; to request a
-          swap.
+          Tap a shift to give it away.
         </p>
       </div>
 

@@ -1,20 +1,20 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, ArrowLeftRight, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { SimpleDialog } from "@/components/ui/simple-dialog";
+import { ActionSheet } from "@/components/ui/action-sheet";
 import { createDirectSwap, createPublicSwap } from "@/app/actions/employee";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ShiftRow = {
   id: string;
-  date: string; // YYYY-MM-DD
-  startTime: string; // HH:MM:SS
+  date: string;
+  startTime: string;
   endTime: string;
   groupId: string;
   groupName: string;
@@ -31,8 +31,13 @@ export type ColleagueRow = {
   id: string;
   firstName: string;
   lastName: string;
-  groupIds: string[]; // groups shared with me
+  groupIds: string[];
 };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_LONG  = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -53,29 +58,98 @@ function fmtShortDate(dateStr: string) {
   });
 }
 
-const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // ─── Swap status badge ────────────────────────────────────────────────────────
 
-function swapBadge(shift: ShiftRow) {
-  if (!shift.swapId) return null;
+function SwapStatusBadge({ status, type }: { status: string | null; type: string | null }) {
   const label =
-    shift.swapStatus === "pending_employee" && shift.swapType === "direct"
-      ? "Swap sent"
-      : shift.swapStatus === "pending_employee" && shift.swapType === "public"
-        ? "On board"
-        : shift.swapStatus === "accepted_by_employee" ||
-            shift.swapStatus === "pending_manager"
-          ? "Mgr review"
-          : null;
+    status === "pending_employee" && type === "direct" ? "Swap sent"  :
+    status === "pending_employee" && type === "public"  ? "On board"   :
+    status === "accepted_by_employee" || status === "pending_manager" ? "Mgr review" :
+    null;
   if (!label) return null;
   return (
     <Badge
       variant="outline"
-      className="text-[10px] py-0 px-1.5 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400"
+      className="text-xs py-1 px-2.5 border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400 whitespace-nowrap"
     >
       {label}
     </Badge>
+  );
+}
+
+// ─── Shift card ───────────────────────────────────────────────────────────────
+
+function ShiftCard({ shift, onGiveAway }: { shift: ShiftRow; onGiveAway: () => void }) {
+  return (
+    <div
+      className="rounded-2xl border-l-4 bg-card shadow-sm overflow-hidden"
+      style={{ borderLeftColor: shift.templateColor }}
+    >
+      <div
+        className="px-4 py-4"
+        style={{ backgroundColor: `${shift.templateColor}15` }}
+      >
+        <div className="flex items-start justify-between gap-3">
+          {/* Left — info */}
+          <div className="flex-1 min-w-0">
+            {/* Group */}
+            <div className="flex items-center gap-1.5 mb-2">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: shift.groupColor }}
+              />
+              <span className="text-xs font-medium text-muted-foreground truncate">
+                {shift.groupName}
+              </span>
+            </div>
+
+            {/* Time — large and bold */}
+            <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground leading-none">
+              {fmtTime(shift.startTime)}
+              <span className="text-muted-foreground font-normal mx-1">–</span>
+              {fmtTime(shift.endTime)}
+            </p>
+
+            {/* OT badge */}
+            {shift.extraHours != null && shift.extraHours > 0 && (
+              <div className="flex items-center gap-1.5 mt-2">
+                <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                  +{shift.extraHours}h overtime
+                </span>
+                {shift.extraHoursNotes && (
+                  <span title={shift.extraHoursNotes} className="cursor-help">
+                    <Info
+                      size={13}
+                      className="text-amber-500 dark:text-amber-400 shrink-0"
+                    />
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Right — action */}
+          <div className="shrink-0 flex items-center self-center">
+            {shift.swapId ? (
+              <SwapStatusBadge status={shift.swapStatus} type={shift.swapType} />
+            ) : (
+              <button
+                onClick={onGiveAway}
+                className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl border border-border bg-background text-sm font-medium transition-colors hover:bg-muted active:scale-95"
+              >
+                <ArrowLeftRight size={14} className="shrink-0" />
+                <span>Give Away</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -90,7 +164,7 @@ export function MyScheduleClient({
   shifts: ShiftRow[];
   colleagues: ColleagueRow[];
 }) {
-  const [dialogShift, setDialogShift] = useState<ShiftRow | null>(null);
+  const [sheetShift, setSheetShift] = useState<ShiftRow | null>(null);
   const [mode, setMode] = useState<"direct" | "public">("direct");
   const [toUserId, setToUserId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -98,9 +172,11 @@ export function MyScheduleClient({
   const router = useRouter();
   const pathname = usePathname();
 
+  const today = todayStr();
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const prevWeek = addDays(weekStart, -7);
   const nextWeek = addDays(weekStart, 7);
+  const isCurrentWeek = weekDates.includes(today);
 
   // Build date → shifts map
   const shiftMap = new Map<string, ShiftRow[]>();
@@ -110,25 +186,32 @@ export function MyScheduleClient({
     shiftMap.set(s.date, list);
   }
 
-  // Colleagues in the same group as the active dialog shift
-  const eligibleColleagues = dialogShift
-    ? colleagues.filter((c) => c.groupIds.includes(dialogShift.groupId))
+  const eligibleColleagues = sheetShift
+    ? colleagues.filter((c) => c.groupIds.includes(sheetShift.groupId))
     : [];
 
-  function openDialog(shift: ShiftRow) {
-    setDialogShift(shift);
+  // On mount / week change: scroll to today if visible
+  useEffect(() => {
+    if (isCurrentWeek) {
+      const el = document.getElementById(`day-${today}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [weekStart]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function openSheet(shift: ShiftRow) {
+    setSheetShift(shift);
     setMode("direct");
     setToUserId("");
     setError(null);
   }
 
-  function closeDialog() {
-    setDialogShift(null);
+  function closeSheet() {
+    setSheetShift(null);
     setError(null);
   }
 
   function handleSubmit() {
-    if (!dialogShift) return;
+    if (!sheetShift) return;
     if (mode === "direct" && !toUserId) {
       setError("Please select a colleague");
       return;
@@ -137,12 +220,12 @@ export function MyScheduleClient({
     startTransition(async () => {
       const result =
         mode === "direct"
-          ? await createDirectSwap(dialogShift.id, toUserId)
-          : await createPublicSwap(dialogShift.id);
+          ? await createDirectSwap(sheetShift.id, toUserId)
+          : await createPublicSwap(sheetShift.id);
       if (result.error) {
         setError(result.error);
       } else {
-        closeDialog();
+        closeSheet();
         router.refresh();
       }
     });
@@ -150,165 +233,168 @@ export function MyScheduleClient({
 
   return (
     <>
-      {/* Week navigation */}
+      {/* ── Week navigation ───────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => router.push(`${pathname}?week=${prevWeek}`)}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted transition-colors"
             aria-label="Previous week"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={20} />
           </button>
-          <span className="text-sm font-medium tabular-nums">
+          <span className="text-sm font-semibold tabular-nums px-1">
             {fmtShortDate(weekStart)} – {fmtShortDate(weekDates[6])}
           </span>
           <button
             onClick={() => router.push(`${pathname}?week=${nextWeek}`)}
-            className="p-1.5 rounded-md hover:bg-muted transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted transition-colors"
             aria-label="Next week"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={20} />
           </button>
         </div>
-        <button
-          onClick={() => router.push(pathname)}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          This week
-        </button>
+
+        {!isCurrentWeek && (
+          <button
+            onClick={() => router.push(pathname)}
+            className="h-10 px-3 rounded-xl text-xs font-semibold text-primary hover:bg-muted transition-colors"
+          >
+            Today
+          </button>
+        )}
       </div>
 
-      {/* Week grid */}
-      <div className="overflow-x-auto">
-        <div className="min-w-[560px] rounded-lg border border-border overflow-hidden">
-          {/* Day headers */}
-          <div className="grid grid-cols-7 border-b border-border bg-muted/40">
-            {weekDates.map((date, i) => (
-              <div
-                key={date}
+      {/* ── Date strip ────────────────────────────────────────────────── */}
+      <div className="flex gap-1 mb-6 overflow-x-auto pb-1 -mx-1 px-1">
+        {weekDates.map((date, i) => {
+          const hasShifts = (shiftMap.get(date) ?? []).length > 0;
+          const isToday = date === today;
+          return (
+            <button
+              key={date}
+              onClick={() => {
+                const el = document.getElementById(`day-${date}`);
+                el?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className={cn(
+                "relative flex flex-col items-center gap-0.5 min-w-[44px] py-2.5 rounded-2xl transition-colors shrink-0",
+                isToday
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted",
+              )}
+            >
+              <span
                 className={cn(
-                  "p-3 text-center",
-                  i < 6 && "border-r border-border",
+                  "text-[11px] font-medium",
+                  isToday ? "text-primary-foreground/80" : "text-muted-foreground",
                 )}
               >
-                <div className="text-xs font-medium text-muted-foreground">
-                  {DAY_NAMES[i]}
-                </div>
-                <div className="text-sm font-semibold mt-0.5">
-                  {new Date(date + "T00:00:00").getDate()}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Shift cells */}
-          <div className="grid grid-cols-7">
-            {weekDates.map((date, i) => {
-              const dayShifts = shiftMap.get(date) ?? [];
-              return (
-                <div
-                  key={date}
-                  className={cn(
-                    "p-2 min-h-[110px]",
-                    i < 6 && "border-r border-border",
-                  )}
-                >
-                  {dayShifts.length === 0 ? (
-                    <span className="text-xs text-muted-foreground/60 select-none">
-                      Off
-                    </span>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {dayShifts.map((shift) => (
-                        <div
-                          key={shift.id}
-                          className="rounded-md border-l-4 p-2 space-y-1"
-                          style={{
-                            backgroundColor: `${shift.templateColor}1a`,
-                            borderLeftColor: shift.templateColor,
-                          }}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: shift.groupColor }}
-                            />
-                            <span className="text-[10px] text-muted-foreground truncate">
-                              {shift.groupName}
-                            </span>
-                          </div>
-                          <div className="text-xs font-medium tabular-nums">
-                            {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
-                          </div>
-                          {shift.extraHours && shift.extraHours > 0 && (
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                                +{shift.extraHours}h OT
-                              </span>
-                              {shift.extraHoursNotes && (
-                                <span title={shift.extraHoursNotes}>
-                                  <Info
-                                    size={10}
-                                    className="text-amber-500 dark:text-amber-400 shrink-0"
-                                  />
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {swapBadge(shift) ?? (
-                            <button
-                              onClick={() => openDialog(shift)}
-                              className="text-[10px] font-medium text-primary hover:text-primary/80 transition-colors"
-                            >
-                              Give Away
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                {DAY_SHORT[i]}
+              </span>
+              <span
+                className={cn(
+                  "text-sm font-bold",
+                  isToday ? "text-primary-foreground" : "text-foreground",
+                )}
+              >
+                {new Date(date + "T00:00:00").getDate()}
+              </span>
+              {/* Dot — days with shifts that aren't today */}
+              {hasShifts && !isToday && (
+                <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-primary" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Give Away dialog */}
-      <SimpleDialog
-        open={dialogShift !== null}
-        onClose={closeDialog}
+      {/* ── Agenda list ───────────────────────────────────────────────── */}
+      <div className="space-y-6">
+        {weekDates.map((date, i) => {
+          const dayShifts = shiftMap.get(date) ?? [];
+          const isToday = date === today;
+          return (
+            <div key={date} id={`day-${date}`} className="scroll-mt-4">
+              {/* Day header */}
+              <div className="flex items-center gap-2 mb-2.5">
+                <span
+                  className={cn(
+                    "text-sm font-semibold",
+                    isToday ? "text-primary" : "text-foreground",
+                  )}
+                >
+                  {DAY_LONG[i]}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {fmtShortDate(date)}
+                </span>
+                {isToday && (
+                  <span className="text-[10px] font-bold uppercase tracking-wide bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full leading-none">
+                    Today
+                  </span>
+                )}
+              </div>
+
+              {/* Day content */}
+              {dayShifts.length === 0 ? (
+                <div className="flex items-center px-4 py-3 rounded-2xl bg-muted/40">
+                  <span className="text-sm text-muted-foreground">Day off</span>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {dayShifts.map((shift) => (
+                    <ShiftCard
+                      key={shift.id}
+                      shift={shift}
+                      onGiveAway={() => openSheet(shift)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Give Away action sheet ────────────────────────────────────── */}
+      <ActionSheet
+        open={sheetShift !== null}
+        onClose={closeSheet}
         title="Give Away Shift"
       >
-        {dialogShift && (
-          <div className="space-y-4">
+        {sheetShift && (
+          <div className="space-y-4 pt-2">
             {/* Shift summary */}
-            <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <span className="font-medium">
-                {fmtShortDate(dialogShift.date)}
-              </span>
-              <span className="text-muted-foreground">
-                {" · "}
-                {fmtTime(dialogShift.startTime)}–{fmtTime(dialogShift.endTime)}
-              </span>
-              {dialogShift.extraHours && dialogShift.extraHours > 0 && (
-                <span className="ml-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                  +{dialogShift.extraHours}h OT
-                </span>
-              )}
-              <div className="flex items-center gap-1.5 mt-1">
+            <div
+              className="rounded-2xl border-l-4 px-4 py-3"
+              style={{
+                borderLeftColor: sheetShift.templateColor,
+                backgroundColor: `${sheetShift.templateColor}15`,
+              }}
+            >
+              <div className="flex items-center gap-1.5 mb-1">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: dialogShift.groupColor }}
+                  style={{ backgroundColor: sheetShift.groupColor }}
                 />
-                <span className="text-xs text-muted-foreground">
-                  {dialogShift.groupName}
+                <span className="text-xs font-medium text-muted-foreground">
+                  {sheetShift.groupName}
                 </span>
               </div>
-              {dialogShift.extraHoursNotes && (
-                <p className="mt-1 text-xs text-muted-foreground italic">
-                  &ldquo;{dialogShift.extraHoursNotes}&rdquo;
+              <p className="text-base font-bold tabular-nums">
+                {fmtShortDate(sheetShift.date)}
+                <span className="font-normal text-muted-foreground mx-1">·</span>
+                {fmtTime(sheetShift.startTime)}–{fmtTime(sheetShift.endTime)}
+              </p>
+              {sheetShift.extraHours != null && sheetShift.extraHours > 0 && (
+                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400 mt-0.5">
+                  +{sheetShift.extraHours}h overtime
+                </p>
+              )}
+              {sheetShift.extraHoursNotes && (
+                <p className="text-xs text-muted-foreground italic mt-1 truncate">
+                  &ldquo;{sheetShift.extraHoursNotes}&rdquo;
                 </p>
               )}
             </div>
@@ -317,30 +403,27 @@ export function MyScheduleClient({
             <button
               onClick={() => setMode("direct")}
               className={cn(
-                "w-full text-left rounded-lg border p-3 transition-colors",
+                "w-full text-left rounded-2xl border p-4 transition-colors",
                 mode === "direct"
                   ? "border-primary bg-primary/5"
                   : "border-border hover:bg-muted/50",
               )}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <span
                   className={cn(
-                    "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                    mode === "direct"
-                      ? "border-primary"
-                      : "border-muted-foreground",
+                    "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0",
+                    mode === "direct" ? "border-primary" : "border-muted-foreground",
                   )}
                 >
                   {mode === "direct" && (
-                    <span className="w-2 h-2 rounded-full bg-primary" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-primary" />
                   )}
                 </span>
                 <span className="text-sm font-medium">Send to a colleague</span>
               </div>
-
               {mode === "direct" && (
-                <div className="mt-2 ml-6">
+                <div className="mt-3 ml-8">
                   {eligibleColleagues.length === 0 ? (
                     <p className="text-xs text-muted-foreground">
                       No colleagues in this group yet.
@@ -350,7 +433,7 @@ export function MyScheduleClient({
                       value={toUserId}
                       onChange={(e) => setToUserId(e.target.value)}
                       onClick={(e) => e.stopPropagation()}
-                      className="w-full h-8 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="w-full h-11 rounded-xl border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="">Select colleague…</option>
                       {eligibleColleagues.map((c) => (
@@ -368,54 +451,44 @@ export function MyScheduleClient({
             <button
               onClick={() => setMode("public")}
               className={cn(
-                "w-full text-left rounded-lg border p-3 transition-colors",
+                "w-full text-left rounded-2xl border p-4 transition-colors",
                 mode === "public"
                   ? "border-primary bg-primary/5"
                   : "border-border hover:bg-muted/50",
               )}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <span
                   className={cn(
-                    "w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                    mode === "public"
-                      ? "border-primary"
-                      : "border-muted-foreground",
+                    "w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0",
+                    mode === "public" ? "border-primary" : "border-muted-foreground",
                   )}
                 >
                   {mode === "public" && (
-                    <span className="w-2 h-2 rounded-full bg-primary" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-primary" />
                   )}
                 </span>
-                <span className="text-sm font-medium">
-                  Post to public board
-                </span>
+                <span className="text-sm font-medium">Post to public board</span>
               </div>
               {mode === "public" && (
-                <p className="text-xs text-muted-foreground mt-1 ml-6">
-                  Anyone in {dialogShift.groupName} can claim this shift.
+                <p className="text-xs text-muted-foreground mt-2 ml-8">
+                  Anyone in {sheetShift.groupName} can pick this up.
                 </p>
               )}
             </button>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={closeDialog}
-                disabled={isPending}
-              >
-                Cancel
-              </Button>
-              <Button size="sm" onClick={handleSubmit} disabled={isPending}>
-                {isPending ? "Posting…" : "Give Away"}
-              </Button>
-            </div>
+            <Button
+              className="w-full h-12 text-base font-semibold rounded-xl"
+              onClick={handleSubmit}
+              disabled={isPending}
+            >
+              {isPending ? "Posting…" : "Confirm Give Away"}
+            </Button>
           </div>
         )}
-      </SimpleDialog>
+      </ActionSheet>
     </>
   );
 }

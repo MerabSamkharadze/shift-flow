@@ -17,6 +17,7 @@ import {
   addShiftNote,
   saveExtraHours,
 } from "@/app/actions/schedule";
+import { ExportButton } from "@/components/manager/export-button";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -486,7 +487,7 @@ export function ScheduleClient({
 
         {schedule && <StatusBadge status={schedule.status} />}
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-start gap-2 ml-auto">
           {!schedule && prevScheduleExists && (
             <Button
               size="sm"
@@ -506,6 +507,9 @@ export function ScheduleClient({
             <Button size="sm" disabled={isPending} onClick={handlePublish}>
               {isPending ? "Publishing…" : "Publish"}
             </Button>
+          )}
+          {schedule && (
+            <ExportButton weekStart={weekStart} groupId={selectedGroupId} />
           )}
         </div>
       </div>

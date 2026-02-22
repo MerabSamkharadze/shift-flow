@@ -6,6 +6,7 @@ import {
   type MySwapRow,
   type IncomingSwapRow,
   type PublicSwapRow,
+  type MyClaimRow,
 } from "@/components/employee/swaps-client";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export default async function EmployeeSwapsPage() {
 
   const myGroupIds = (myMemberships ?? []).map((m) => m.group_id);
 
-  // ── 2. My swap requests (all statuses) ────────────────────────────────────
+  // ── 2. My swap requests (giveaways I initiated) ───────────────────────────
   const { data: mySwapRows } = await service
     .from("shift_swaps")
     .select("id, shift_id, to_user_id, accepted_by, type, status, requested_at")
@@ -52,7 +53,7 @@ export default async function EmployeeSwapsPage() {
     .eq("status", "pending_employee")
     .order("requested_at", { ascending: false });
 
-  // ── 4. Public board — pending public swaps in my groups (not mine) ────────
+  // ── 4. Public board — open public swaps in my groups (not mine) ───────────
   const { data: publicSwapRows } = myGroupIds.length
     ? await service
         .from("shift_swaps")
@@ -63,12 +64,22 @@ export default async function EmployeeSwapsPage() {
         .order("requested_at", { ascending: false })
     : { data: [] as { id: string; shift_id: string; from_user_id: string; requested_at: string }[] };
 
-  // ── 5. Collect all shift IDs we need info for ────────────────────────────
+  // ── 5. My claims — public swaps I already claimed (accepted_by = me) ──────
+  const { data: myClaimRows } = await service
+    .from("shift_swaps")
+    .select("id, shift_id, from_user_id, status, requested_at")
+    .eq("accepted_by", profile.id)
+    .eq("type", "public")
+    .in("status", ["accepted_by_employee", "pending_manager", "approved", "rejected_by_manager"])
+    .order("requested_at", { ascending: false });
+
+  // ── 6. Collect all shift IDs ──────────────────────────────────────────────
   const allShiftIds = [
     ...new Set([
       ...(mySwapRows ?? []).map((s) => s.shift_id),
       ...(incomingRows ?? []).map((s) => s.shift_id),
       ...(publicSwapRows ?? []).map((s) => s.shift_id),
+      ...(myClaimRows ?? []).map((s) => s.shift_id),
     ]),
   ];
 
@@ -79,7 +90,7 @@ export default async function EmployeeSwapsPage() {
         .in("id", allShiftIds)
     : { data: [] as { id: string; schedule_id: string; date: string; start_time: string; end_time: string }[] };
 
-  // ── 6. Schedule → group lookup ────────────────────────────────────────────
+  // ── 7. Schedule → group lookup ────────────────────────────────────────────
   const scheduleIds = [...new Set((shifts ?? []).map((s) => s.schedule_id))];
 
   const { data: schedules } = scheduleIds.length
@@ -124,7 +135,7 @@ export default async function EmployeeSwapsPage() {
     }),
   );
 
-  // Filter public swaps to only those whose shifts belong to my groups
+  // Filter public swaps to only those in my groups
   const filteredPublicSwaps = (publicSwapRows ?? []).filter((swap) => {
     const shift = shifts?.find((s) => s.id === swap.shift_id);
     if (!shift) return false;
@@ -132,7 +143,7 @@ export default async function EmployeeSwapsPage() {
     return groupId ? myGroupIds.includes(groupId) : false;
   });
 
-  // ── 7. Collect all user IDs we need names for ─────────────────────────────
+  // ── 8. Collect all user IDs we need names for ─────────────────────────────
   const allUserIds = [
     ...new Set([
       ...(mySwapRows ?? [])
@@ -142,7 +153,8 @@ export default async function EmployeeSwapsPage() {
         .map((s) => s.accepted_by)
         .filter((id): id is string => id !== null),
       ...(incomingRows ?? []).map((s) => s.from_user_id),
-      ...(filteredPublicSwaps).map((s) => s.from_user_id),
+      ...filteredPublicSwaps.map((s) => s.from_user_id),
+      ...(myClaimRows ?? []).map((s) => s.from_user_id),
     ]),
   ];
 
@@ -156,24 +168,20 @@ export default async function EmployeeSwapsPage() {
   const userMap = new Map(
     (userRows ?? []).map((u) => [
       u.id,
-      `${u.first_name} ${u.last_name}`,
+      `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
     ]),
   );
 
   // ── Assemble props ────────────────────────────────────────────────────────
+  const emptyShift = { date: "", startTime: "", endTime: "", groupName: "", groupColor: "#6366f1" };
+
   const mySwaps: MySwapRow[] = (mySwapRows ?? []).map((s) => {
-    const shift = shiftMap.get(s.shift_id) ?? {
-      date: "",
-      startTime: "",
-      endTime: "",
-      groupName: "",
-      groupColor: "#6366f1",
-    };
+    const shift = shiftMap.get(s.shift_id) ?? emptyShift;
     return {
       id: s.id,
       type: s.type as "direct" | "public",
       status: s.status,
-      createdAt: s.requested_at??'',
+      createdAt: s.requested_at ?? "",
       shiftDate: shift.date,
       shiftStart: shift.startTime,
       shiftEnd: shift.endTime,
@@ -186,13 +194,7 @@ export default async function EmployeeSwapsPage() {
   });
 
   const incoming: IncomingSwapRow[] = (incomingRows ?? []).map((s) => {
-    const shift = shiftMap.get(s.shift_id) ?? {
-      date: "",
-      startTime: "",
-      endTime: "",
-      groupName: "",
-      groupColor: "#6366f1",
-    };
+    const shift = shiftMap.get(s.shift_id) ?? emptyShift;
     return {
       id: s.id,
       requesterName: userMap.get(s.from_user_id) ?? "Unknown",
@@ -201,18 +203,12 @@ export default async function EmployeeSwapsPage() {
       shiftEnd: shift.endTime,
       groupName: shift.groupName,
       groupColor: shift.groupColor,
-      createdAt: s.requested_at??'',
+      createdAt: s.requested_at ?? "",
     };
   });
 
   const publicBoard: PublicSwapRow[] = filteredPublicSwaps.map((s) => {
-    const shift = shiftMap.get(s.shift_id) ?? {
-      date: "",
-      startTime: "",
-      endTime: "",
-      groupName: "",
-      groupColor: "#6366f1",
-    };
+    const shift = shiftMap.get(s.shift_id) ?? emptyShift;
     return {
       id: s.id,
       requesterName: userMap.get(s.from_user_id) ?? "Unknown",
@@ -221,16 +217,31 @@ export default async function EmployeeSwapsPage() {
       shiftEnd: shift.endTime,
       groupName: shift.groupName,
       groupColor: shift.groupColor,
-      createdAt: s.requested_at??'',
+      createdAt: s.requested_at ?? "",
+    };
+  });
+
+  const myClaims: MyClaimRow[] = (myClaimRows ?? []).map((s) => {
+    const shift = shiftMap.get(s.shift_id) ?? emptyShift;
+    return {
+      id: s.id,
+      originalOwnerName: userMap.get(s.from_user_id) ?? "Unknown",
+      shiftDate: shift.date,
+      shiftStart: shift.startTime,
+      shiftEnd: shift.endTime,
+      groupName: shift.groupName,
+      groupColor: shift.groupColor,
+      status: s.status,
+      claimedAt: s.requested_at ?? "",
     };
   });
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Swap Requests</h1>
+      <div className="mb-5">
+        <h1 className="text-xl font-bold">Swap Requests</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          Manage your shift swap requests and pick up open shifts.
+          Pick up open shifts or manage your swap requests.
         </p>
       </div>
 
@@ -238,6 +249,7 @@ export default async function EmployeeSwapsPage() {
         mySwaps={mySwaps}
         incoming={incoming}
         publicBoard={publicBoard}
+        myClaims={myClaims}
       />
     </div>
   );

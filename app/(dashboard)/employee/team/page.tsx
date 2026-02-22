@@ -65,7 +65,7 @@ export default async function TeamPage({
     return (
       <div>
         <div className="mb-6">
-          <h1 className="text-2xl font-bold">Team Schedule</h1>
+          <h1 className="text-xl font-bold">Team Schedule</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             View your colleagues&apos; shifts for the week.
           </p>
@@ -166,8 +166,8 @@ export default async function TeamPage({
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Team Schedule</h1>
+      <div className="mb-5">
+        <h1 className="text-xl font-bold">Team Schedule</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
           Published shifts for everyone in your group this week.
         </p>

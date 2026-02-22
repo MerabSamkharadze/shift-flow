@@ -19,6 +19,7 @@ export type ShiftRow = {
   groupId: string;
   groupName: string;
   groupColor: string;
+  templateColor: string;
   swapId: string | null;
   swapStatus: string | null;
   swapType: "direct" | "public" | null;
@@ -219,7 +220,11 @@ export function MyScheduleClient({
                       {dayShifts.map((shift) => (
                         <div
                           key={shift.id}
-                          className="rounded-md bg-muted/60 p-2 space-y-1"
+                          className="rounded-md border-l-4 p-2 space-y-1"
+                          style={{
+                            backgroundColor: `${shift.templateColor}1a`,
+                            borderLeftColor: shift.templateColor,
+                          }}
                         >
                           <div className="flex items-center gap-1">
                             <span

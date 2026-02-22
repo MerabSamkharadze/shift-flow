@@ -308,3 +308,28 @@ export async function addShiftNote(shiftId: string, note: string) {
     return { error: "Something went wrong" };
   }
 }
+
+export async function saveExtraHours(
+  shiftId: string,
+  extraHours: number | null,
+  extraHoursNotes: string | null,
+) {
+  const { supabase, profile } = await getManagerProfile();
+  try {
+    const { error } = await supabase
+      .from("shifts")
+      .update({
+        extra_hours: extraHours,
+        extra_hours_notes: extraHoursNotes,
+        modified_by: profile.id,
+      })
+      .eq("id", shiftId);
+
+    if (error) return { error: error.message };
+
+    revalidatePath("/manager/schedule");
+    return { error: null };
+  } catch {
+    return { error: "Something went wrong" };
+  }
+}

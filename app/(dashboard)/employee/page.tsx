@@ -56,7 +56,7 @@ export default async function EmployeePage({
   // ── 1. Employee's shifts for the week ────────────────────────────────────────
   const { data: shifts } = await supabase
     .from("shifts")
-    .select("id, schedule_id, date, start_time, end_time")
+    .select("id, schedule_id, date, start_time, end_time, shift_template_id, shift_templates(color)")
     .eq("assigned_to", profile.id)
     .gte("date", weekStart)
     .lte("date", weekEnd)
@@ -146,6 +146,8 @@ export default async function EmployeePage({
     const groupId = scheduleGroupMap.get(s.schedule_id) ?? "";
     const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
     const swap = swapMap.get(s.id);
+    const templateData = (s as unknown as { shift_templates: { color: string | null } | null }).shift_templates;
+    const templateColor = templateData?.color ?? "#3b82f6";
     return {
       id: s.id,
       date: s.date,
@@ -154,6 +156,7 @@ export default async function EmployeePage({
       groupId,
       groupName: group.name,
       groupColor: group.color,
+      templateColor,
       swapId: swap?.id ?? null,
       swapStatus: swap?.status ?? null,
       swapType: (swap?.type as "direct" | "public") ?? null,

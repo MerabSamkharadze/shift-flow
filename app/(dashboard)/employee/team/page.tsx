@@ -112,7 +112,7 @@ export default async function TeamPage({
   const { data: shifts } = scheduleIds.length
     ? await service
         .from("shifts")
-        .select("id, schedule_id, assigned_to, date, start_time, end_time")
+        .select("id, schedule_id, assigned_to, date, start_time, end_time, shift_template_id, shift_templates(color)")
         .in("schedule_id", scheduleIds)
         .gte("date", weekStart)
         .lte("date", weekEnd)
@@ -125,6 +125,8 @@ export default async function TeamPage({
           date: string;
           start_time: string;
           end_time: string;
+          shift_template_id: string | null;
+          shift_templates: { color: string | null } | null;
         }[],
       };
 
@@ -148,6 +150,8 @@ export default async function TeamPage({
   const teamShifts: TeamShiftRow[] = (shifts ?? []).map((s) => {
     const groupId = scheduleGroupMap.get(s.schedule_id) ?? "";
     const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
+    const templateData = (s as unknown as { shift_templates: { color: string | null } | null }).shift_templates;
+    const templateColor = templateData?.color ?? "#3b82f6";
     return {
       id: s.id,
       userId: s.assigned_to,
@@ -156,6 +160,7 @@ export default async function TeamPage({
       endTime: s.end_time,
       groupName: group.name,
       groupColor: group.color,
+      templateColor,
     };
   });
 

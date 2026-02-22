@@ -139,7 +139,7 @@ export default async function SchedulePage({
   const { data: shiftsRaw } = schedule
     ? await supabase
         .from("shifts")
-        .select("id, assigned_to, date, start_time, end_time, shift_template_id, notes")
+        .select("id, assigned_to, date, start_time, end_time, shift_template_id, notes, extra_hours, extra_hours_notes")
         .eq("schedule_id", schedule.id)
     : { data: [] as {
         id: string;
@@ -149,6 +149,8 @@ export default async function SchedulePage({
         end_time: string;
         shift_template_id: string | null;
         notes: string | null;
+        extra_hours: number | null;
+        extra_hours_notes: string | null;
       }[] };
 
   const shifts: ShiftRow[] = (shiftsRaw ?? []).map((s) => ({
@@ -159,6 +161,8 @@ export default async function SchedulePage({
     endTime: s.end_time,
     templateId: s.shift_template_id,
     notes: s.notes,
+    extraHours: s.extra_hours,
+    extraHoursNotes: s.extra_hours_notes,
   }));
 
   // ── 6. Check if previous week has a schedule (for Copy button) ───────────

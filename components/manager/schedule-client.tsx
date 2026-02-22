@@ -15,6 +15,7 @@ import {
   updateShift,
   removeShift,
   addShiftNote,
+  saveExtraHours,
 } from "@/app/actions/schedule";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,6 +37,8 @@ export type ShiftRow = {
   endTime: string;
   templateId: string | null;
   notes: string | null;
+  extraHours: number | null;
+  extraHoursNotes: string | null;
 };
 export type ScheduleRow = {
   id: string;
@@ -54,7 +57,13 @@ type OptimisticAction =
       endTime: string;
     }
   | { type: "remove"; shiftId: string }
-  | { type: "note"; shiftId: string; note: string | null };
+  | { type: "note"; shiftId: string; note: string | null }
+  | {
+      type: "overtime";
+      shiftId: string;
+      extraHours: number | null;
+      extraHoursNotes: string | null;
+    };
 
 function shiftsReducer(state: ShiftRow[], action: OptimisticAction): ShiftRow[] {
   switch (action.type) {
@@ -77,6 +86,12 @@ function shiftsReducer(state: ShiftRow[], action: OptimisticAction): ShiftRow[] 
       return state.map((s) =>
         s.id === action.shiftId ? { ...s, notes: action.note } : s,
       );
+    case "overtime":
+      return state.map((s) =>
+        s.id === action.shiftId
+          ? { ...s, extraHours: action.extraHours, extraHoursNotes: action.extraHoursNotes }
+          : s,
+      );
   }
 }
 
@@ -87,7 +102,8 @@ type Dialog =
   | { type: "add"; userId: string; date: string; memberName: string }
   | { type: "view"; shift: ShiftRow; memberName: string }
   | { type: "change"; shift: ShiftRow; memberName: string }
-  | { type: "note"; shift: ShiftRow; memberName: string };
+  | { type: "note"; shift: ShiftRow; memberName: string }
+  | { type: "overtime"; shift: ShiftRow; memberName: string };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -167,6 +183,8 @@ export function ScheduleClient({
   const [dialog, setDialog] = useState<Dialog>({ type: "none" });
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [noteText, setNoteText] = useState("");
+  const [overtimeHours, setOvertimeHours] = useState("");
+  const [overtimeNotes, setOvertimeNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -254,6 +272,8 @@ export function ScheduleClient({
       endTime: template.endTime,
       templateId: selectedTemplateId,
       notes: null,
+      extraHours: null,
+      extraHoursNotes: null,
     };
 
     closeDialog();
@@ -314,6 +334,24 @@ export function ScheduleClient({
     });
   }
 
+  function handleSaveOvertime() {
+    if (dialog.type !== "overtime") return;
+    const { shift } = dialog;
+    const parsed = parseFloat(overtimeHours);
+    const extraHours = overtimeHours.trim() === "" || isNaN(parsed) || parsed <= 0
+      ? null
+      : parsed;
+    const extraHoursNotes = overtimeNotes.trim() || null;
+
+    closeDialog();
+    startTransition(async () => {
+      applyOptimistic({ type: "overtime", shiftId: shift.id, extraHours, extraHoursNotes });
+      const result = await saveExtraHours(shift.id, extraHours, extraHoursNotes);
+      if (result.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
   // ── Dialog title ──────────────────────────────────────────────────────────
 
   function dialogTitle() {
@@ -323,6 +361,7 @@ export function ScheduleClient({
       return `Add Shift — ${name}, ${fmtShortDate(dialog.date)}`;
     if (dialog.type === "change") return `Change Shift — ${name}`;
     if (dialog.type === "note") return `Note — ${name}`;
+    if (dialog.type === "overtime") return `Extra Hours — ${name}`;
     return `Shift — ${name} · ${fmtShortDate(dialog.shift.date)}`;
   }
 
@@ -389,12 +428,19 @@ export function ScheduleClient({
           <div className="text-[10px] tabular-nums text-foreground/70 mt-0.5">
             {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
           </div>
-          {shift.notes && (
-            <StickyNote
-              size={9}
-              className="mt-0.5 text-muted-foreground opacity-60"
-            />
-          )}
+          <div className="flex items-center gap-1 mt-0.5">
+            {shift.notes && (
+              <StickyNote
+                size={9}
+                className="text-muted-foreground opacity-60"
+              />
+            )}
+            {shift.extraHours && shift.extraHours > 0 && (
+              <span className="text-[9px] font-semibold leading-none text-amber-600 dark:text-amber-400">
+                +{shift.extraHours}h OT
+              </span>
+            )}
+          </div>
         </div>
       </button>
     );
@@ -616,6 +662,16 @@ export function ScheduleClient({
                   &ldquo;{dialog.shift.notes}&rdquo;
                 </p>
               )}
+              {dialog.shift.extraHours && dialog.shift.extraHours > 0 && (
+                <p className="text-xs font-medium text-amber-600 dark:text-amber-400 mt-1">
+                  +{dialog.shift.extraHours}h overtime
+                  {dialog.shift.extraHoursNotes && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}· {dialog.shift.extraHoursNotes}
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -647,6 +703,23 @@ export function ScheduleClient({
                 }}
               >
                 {dialog.shift.notes ? "Edit Note" : "Add Note"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setOvertimeHours(
+                    dialog.shift.extraHours ? String(dialog.shift.extraHours) : "",
+                  );
+                  setOvertimeNotes(dialog.shift.extraHoursNotes ?? "");
+                  setDialog({
+                    type: "overtime",
+                    shift: dialog.shift,
+                    memberName: dialog.memberName,
+                  });
+                }}
+              >
+                {dialog.shift.extraHours ? "Edit OT" : "Extra Hours"}
               </Button>
               <Button
                 size="sm"
@@ -747,6 +820,56 @@ export function ScheduleClient({
               </Button>
               <Button size="sm" onClick={handleSaveNote}>
                 Save Note
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Extra Hours / Overtime */}
+        {dialog.type === "overtime" && (
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">
+              {fmtShortDate(dialog.shift.date)} ·{" "}
+              {fmtTime(dialog.shift.startTime)}–{fmtTime(dialog.shift.endTime)}
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Extra Hours</label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={overtimeHours}
+                onChange={(e) => setOvertimeHours(e.target.value)}
+                placeholder="e.g. 1.5"
+                className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Manager Notes</label>
+              <textarea
+                value={overtimeNotes}
+                onChange={(e) => setOvertimeNotes(e.target.value)}
+                placeholder="e.g. Stayed late to finish inventory"
+                rows={3}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setDialog({
+                    type: "view",
+                    shift: dialog.shift,
+                    memberName: dialog.memberName,
+                  })
+                }
+              >
+                Back
+              </Button>
+              <Button size="sm" onClick={handleSaveOvertime}>
+                Save
               </Button>
             </div>
           </div>

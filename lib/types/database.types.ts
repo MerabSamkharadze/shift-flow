@@ -294,6 +294,8 @@ export interface Database {
           original_end_time: string | null
           status: ShiftStatus
           notes: string | null
+          extra_hours: number | null
+          extra_hours_notes: string | null
           created_by: string
           modified_by: string | null
           created_at: string
@@ -313,6 +315,8 @@ export interface Database {
           original_end_time?: string | null
           status?: ShiftStatus
           notes?: string | null
+          extra_hours?: number | null
+          extra_hours_notes?: string | null
           created_by: string
           modified_by?: string | null
           created_at?: string
@@ -332,6 +336,8 @@ export interface Database {
           original_end_time?: string | null
           status?: ShiftStatus
           notes?: string | null
+          extra_hours?: number | null
+          extra_hours_notes?: string | null
           modified_by?: string | null
           updated_at?: string
         }

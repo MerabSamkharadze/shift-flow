@@ -20,6 +20,7 @@ export type TeamShiftRow = {
   endTime: string;
   groupName: string;
   groupColor: string;
+  templateColor: string;
 };
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -173,7 +174,11 @@ export function TeamScheduleClient({
                           {dayShifts.map((s) => (
                             <div
                               key={s.id}
-                              className="rounded bg-muted/60 px-1.5 py-1"
+                              className="rounded border-l-4 px-1.5 py-1"
+                              style={{
+                                backgroundColor: `${s.templateColor}1a`,
+                                borderLeftColor: s.templateColor,
+                              }}
                             >
                               <div className="flex items-center gap-1 mb-0.5">
                                 <span

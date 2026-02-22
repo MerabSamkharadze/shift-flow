@@ -30,7 +30,7 @@ function addDays(dateStr: string, days: number): string {
 export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: { week?: string };
+  searchParams: { week?: string; employeeId?: string };
 }) {
   // Auth always uses the session-based server client
   const supabase = createClient();
@@ -70,7 +70,12 @@ export default async function TeamPage({
             View your colleagues&apos; shifts for the week.
           </p>
         </div>
-        <TeamScheduleClient weekStart={weekStart} members={[]} shifts={[]} />
+        <TeamScheduleClient
+          weekStart={weekStart}
+          selectedEmployeeId=""
+          members={[]}
+          shifts={[]}
+        />
       </div>
     );
   }
@@ -175,6 +180,7 @@ export default async function TeamPage({
 
       <TeamScheduleClient
         weekStart={weekStart}
+        selectedEmployeeId={searchParams.employeeId ?? ""}
         members={members}
         shifts={teamShifts}
       />

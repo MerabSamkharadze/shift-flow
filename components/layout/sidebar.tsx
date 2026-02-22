@@ -26,7 +26,7 @@ function Avatar({ firstName, lastName }: { firstName: string; lastName: string }
 
 export function Sidebar({ role, firstName, lastName, email }: Props) {
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-background">
+    <aside className="hidden md:flex h-screen w-64 shrink-0 flex-col border-r border-border bg-background">
       {/* Logo */}
       <div className="flex h-14 items-center border-b border-border px-5">
         <span className="text-base font-bold tracking-tight">ShiftFlow</span>

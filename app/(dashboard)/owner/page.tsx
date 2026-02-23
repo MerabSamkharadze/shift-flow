@@ -19,6 +19,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MonthlyReportButton } from "@/components/owner/monthly-report-button";
 
 export const dynamic = "force-dynamic";
 
@@ -332,13 +333,16 @@ export default async function OwnerDashboardPage() {
   return (
     <div className="space-y-8">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold">
-          Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
-        </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          Company-wide overview across all managers and groups.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">
+            Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
+          </h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Company-wide overview across all managers and groups.
+          </p>
+        </div>
+        <MonthlyReportButton />
       </div>
 
       {/* ── Stats ─────────────────────────────────────────────────────────── */}

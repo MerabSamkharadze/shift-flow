@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/layout/sidebar";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { MobileNav } from "@/components/layout/mobile-nav";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +40,14 @@ export default async function DashboardLayout({
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Mobile top header */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4 md:hidden">
-          <span className="text-base font-bold tracking-tight">ShiftFlow</span>
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
+          <MobileNav
+            role={profile.role}
+            firstName={profile.first_name ?? ""}
+            lastName={profile.last_name ?? ""}
+            userId={user.id}
+          />
+          <span className="flex-1 text-base font-bold tracking-tight">ShiftFlow</span>
           <NotificationBell userId={user.id} />
         </header>
 

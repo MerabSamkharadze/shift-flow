@@ -411,13 +411,13 @@ export function ScheduleClient({
         onClick={() => (isReadOnly ? undefined : openViewDialog(shift, memberName))}
         disabled={isReadOnly}
         className={cn(
-          "min-h-[60px] w-full text-left rounded-md p-1.5 transition-all",
+          "min-h-[60px] w-full text-left rounded-md p-1 md:p-1.5 transition-all",
           isReadOnly ? "cursor-default" : "hover:ring-1 hover:ring-primary/40",
           isOptimistic && "opacity-70",
         )}
       >
         <div
-          className="rounded border-l-4 px-1.5 py-1 h-full"
+          className="rounded border-l-4 px-1 md:px-1.5 py-1 h-full"
           style={{
             backgroundColor: `${color}1a`,
             borderLeftColor: color,
@@ -426,7 +426,7 @@ export function ScheduleClient({
           <div className="text-[10px] font-medium truncate text-foreground">
             {template?.name ?? "Custom"}
           </div>
-          <div className="text-[10px] tabular-nums text-foreground/70 mt-0.5">
+          <div className="text-[10px] tabular-nums text-foreground/70 mt-0.5 whitespace-nowrap">
             {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
           </div>
           <div className="flex items-center gap-1 mt-0.5">
@@ -536,61 +536,121 @@ export function ScheduleClient({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <div className="min-w-[700px] rounded-lg border border-border overflow-hidden">
-            {/* Header */}
-            <div
-              className="grid border-b border-border bg-muted/40"
-              style={{ gridTemplateColumns: "180px repeat(7, 1fr)" }}
-            >
-              <div className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                Employee
-              </div>
-              {weekDates.map((date, i) => (
-                <div
-                  key={date}
-                  className="px-2 py-3 text-center border-l border-border"
-                >
-                  <div className="text-xs font-medium text-muted-foreground">
-                    {DAY_NAMES[i]}
-                  </div>
-                  <div className="text-sm font-semibold mt-0.5">
-                    {new Date(date + "T00:00:00").getDate()}
-                  </div>
-                </div>
-              ))}
-            </div>
+        <div className="relative">
+          {/* Right-edge fade — mobile only. Signals the table scrolls right. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent z-30 rounded-r-lg md:hidden"
+          />
 
-            {/* Rows */}
-            {members.map((member, mi) => (
+          {/*
+           * Scroll container rules:
+           *  – overflow-x-auto + touch momentum scrolling
+           *  – Thin always-visible scrollbar so users know it's scrollable
+           *  – NO overflow-hidden: that breaks position:sticky on child cells
+           */}
+          <div
+            className={cn(
+              "overflow-x-auto rounded-lg border border-border",
+              // Always-visible thin scrollbar (WebKit / Blink)
+              "[&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:h-1.5",
+              "[&::-webkit-scrollbar-track]:bg-muted/40 [&::-webkit-scrollbar-track]:rounded-full",
+              "[&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-thumb]:rounded-full",
+            )}
+            style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+          >
+            {/*
+             * min-w-[1200px] forces horizontal scroll on any viewport narrower
+             * than 1200 px. gridTemplateColumns stays 1fr so desktop columns
+             * still stretch to fill whatever space is available — desktop view
+             * is completely unaffected.
+             */}
+            {/*
+             * min-w-[780px] = 80px name + 7 × 100px day columns.
+             * On mobile this forces horizontal scroll; on desktop the grid
+             * fills the available space (no forced scroll).
+             */}
+            <div className="min-w-[780px]">
+              {/* ── Header row ─────────────────────────────────────────────── */}
               <div
-                key={member.id}
-                className={cn(
-                  "grid",
-                  mi !== members.length - 1 && "border-b border-border",
-                )}
-                style={{ gridTemplateColumns: "180px repeat(7, 1fr)" }}
+                className="grid border-b border-border bg-muted/40"
+                style={{ gridTemplateColumns: "auto repeat(7, minmax(100px, 1fr))" }}
               >
-                <div className="px-4 py-2 flex items-center border-r border-border">
-                  <span className="text-sm font-medium truncate">
-                    {member.firstName} {member.lastName}
-                  </span>
+                {/* Sticky "Employee" header — width drives the auto column */}
+                <div className="sticky left-0 z-20 bg-muted w-[80px] md:w-[180px] px-2 md:px-4 py-3 text-xs font-medium text-muted-foreground border-r border-border">
+                  <span className="md:hidden">Name</span>
+                  <span className="hidden md:inline">Employee</span>
                 </div>
-                {weekDates.map((date, di) => (
+                {weekDates.map((date, i) => (
                   <div
                     key={date}
-                    className={cn("p-1", di < 6 && "border-r border-border")}
+                    className="px-1 py-2 md:px-2 md:py-3 text-center border-l border-border"
                   >
-                    <ShiftCell
-                      userId={member.id}
-                      date={date}
-                      memberName={`${member.firstName} ${member.lastName}`}
-                    />
+                    <div className="text-[11px] md:text-xs font-medium text-muted-foreground">
+                      {DAY_NAMES[i]}
+                    </div>
+                    <div className="text-xs md:text-sm font-semibold mt-0.5 tabular-nums">
+                      {new Date(date + "T00:00:00").getDate()}
+                    </div>
                   </div>
                 ))}
               </div>
-            ))}
+
+              {/* ── Data rows ──────────────────────────────────────────────── */}
+              {members.map((member, mi) => (
+                <div
+                  key={member.id}
+                  className={cn(
+                    "grid",
+                    mi !== members.length - 1 && "border-b border-border",
+                  )}
+                  style={{ gridTemplateColumns: "auto repeat(7, minmax(100px, 1fr))" }}
+                >
+                  {/*
+                   * Sticky name cell — width matches the header cell.
+                   * Mobile:  80px, stacked first/last name at text-[11px].
+                   * Desktop: 180px, full name on one line at text-sm.
+                   */}
+                  <div className="sticky left-0 z-10 bg-background flex items-center min-h-[68px] w-[80px] md:w-[180px] px-2 md:px-4 py-2 border-r border-border shadow-[2px_0_4px_-1px_hsl(var(--border))]">
+                    {/* Desktop: single line */}
+                    <span className="hidden md:block text-sm font-medium truncate whitespace-nowrap">
+                      {member.firstName} {member.lastName}
+                    </span>
+                    {/* Mobile: stacked */}
+                    <div className="md:hidden w-full">
+                      <div className="text-[11px] font-semibold leading-tight truncate">
+                        {member.firstName}
+                      </div>
+                      <div className="text-[11px] font-medium leading-tight truncate text-muted-foreground">
+                        {member.lastName}
+                      </div>
+                    </div>
+                  </div>
+
+                  {weekDates.map((date, di) => (
+                    <div
+                      key={date}
+                      className={cn(
+                        "p-1 min-h-[68px]",
+                        di < 6 && "border-r border-border",
+                      )}
+                    >
+                      <ShiftCell
+                        userId={member.id}
+                        date={date}
+                        memberName={`${member.firstName} ${member.lastName}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
+
+          {/* Swipe hint — mobile only, disappears on md+ */}
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/50 select-none md:hidden">
+            Swipe right to view full schedule →
+          </p>
         </div>
       )}
 

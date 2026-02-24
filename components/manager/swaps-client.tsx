@@ -179,28 +179,28 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                   From
                 </th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                   To
                 </th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                   Shift
                 </th>
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                   Type
                 </th>
                 {tab === "all" && (
-                  <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                  <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                     Status
                   </th>
                 )}
-                <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                   Requested
                 </th>
                 <th className="px-4 py-3" />
@@ -215,10 +215,10 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
                   }
                 >
                   {/* From */}
-                  <td className="px-4 py-3 font-medium">{s.requesterName}</td>
+                  <td className="px-4 py-3 font-medium whitespace-nowrap">{s.requesterName}</td>
 
                   {/* To */}
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                     {s.recipientName ?? (
                       <span className="text-violet-600 dark:text-violet-400 font-medium">
                         Public
@@ -238,13 +238,13 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
                   </td>
 
                   {/* Type badge */}
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <TypeBadge type={s.type} />
                   </td>
 
                   {/* Status badge — only in "all" tab */}
                   {tab === "all" && (
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       <StatusBadge status={s.status} />
                     </td>
                   )}
@@ -259,7 +259,7 @@ export function SwapsClient({ swaps }: { swaps: SwapRow[] }) {
                   </td>
 
                   {/* Actions */}
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     {(s.status === "accepted_by_employee" || s.status === "pending_manager") && (
                       <div className="flex items-center gap-3 justify-end">
                         <ApproveButton swapId={s.id} />

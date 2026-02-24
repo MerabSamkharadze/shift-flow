@@ -206,14 +206,14 @@ export function GroupDetailTabs({
           {members.length === 0 ? (
             <p className="text-sm text-muted-foreground">No members yet.</p>
           ) : (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+              <table className="w-full text-sm min-w-[500px]">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                       Name
                     </th>
-                    <th className="text-left font-medium text-muted-foreground px-4 py-3">
+                    <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
                       Email
                     </th>
                     <th className="px-4 py-3" />
@@ -227,10 +227,10 @@ export function GroupDetailTabs({
                         i !== members.length - 1 ? "border-b border-border" : ""
                       }
                     >
-                      <td className="px-4 py-3 font-medium">
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">
                         {m.firstName} {m.lastName}
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                         {m.email}
                       </td>
                       <td className="px-4 py-3 text-right">

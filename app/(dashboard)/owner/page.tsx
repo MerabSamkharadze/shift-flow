@@ -2,12 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Users,
@@ -176,34 +171,35 @@ export default async function OwnerDashboardPage() {
 
   const companyShiftIds = (companyShifts ?? []).map((s) => s.id);
 
-  const { data: pendingSwaps, count: pendingSwapCount } =
-    companyShiftIds.length
-      ? await service
-          .from("shift_swaps")
-          .select(
-            "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
-            { count: "exact" },
-          )
-          .in("shift_id", companyShiftIds)
-          .in("status", ["accepted_by_employee", "pending_manager"])
-          .order("requested_at", { ascending: false })
-          .limit(5)
-      : {
-          data: [] as {
-            id: string;
-            shift_id: string;
-            from_user_id: string;
-            to_user_id: string | null;
-            accepted_by: string | null;
-            requested_at: string | null;
-          }[],
-          count: 0,
-        };
+  const { data: pendingSwaps, count: pendingSwapCount } = companyShiftIds.length
+    ? await service
+        .from("shift_swaps")
+        .select(
+          "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
+          { count: "exact" },
+        )
+        .in("shift_id", companyShiftIds)
+        .in("status", ["accepted_by_employee", "pending_manager"])
+        .order("requested_at", { ascending: false })
+        .limit(5)
+    : {
+        data: [] as {
+          id: string;
+          shift_id: string;
+          from_user_id: string;
+          to_user_id: string | null;
+          accepted_by: string | null;
+          requested_at: string | null;
+        }[],
+        count: 0,
+      };
 
   // ── 3. Managers list ───────────────────────────────────────────────────────
   const { data: managersData } = await service
     .from("users")
-    .select("id, first_name, last_name, email, is_active, must_change_password, created_at")
+    .select(
+      "id, first_name, last_name, email, is_active, must_change_password, created_at",
+    )
     .eq("company_id", profile.company_id)
     .eq("role", "manager")
     .order("created_at", { ascending: false })
@@ -261,9 +257,7 @@ export default async function OwnerDashboardPage() {
     .order("created_at", { ascending: false })
     .limit(5);
 
-  const actorIds = [
-    ...new Set((activityLogs ?? []).map((l) => l.user_id)),
-  ];
+  const actorIds = [...new Set((activityLogs ?? []).map((l) => l.user_id))];
 
   const { data: actorUsers } = actorIds.length
     ? await service
@@ -333,14 +327,11 @@ export default async function OwnerDashboardPage() {
   return (
     <div className="space-y-8">
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">
             Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
           </h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Company-wide overview across all managers and groups.
-          </p>
         </div>
         <MonthlyReportButton />
       </div>
@@ -416,15 +407,12 @@ export default async function OwnerDashboardPage() {
                         key={m.id}
                         className={cn(
                           "transition-colors hover:bg-muted/30",
-                          i !== managers.length - 1 &&
-                            "border-b border-border",
+                          i !== managers.length - 1 && "border-b border-border",
                         )}
                       >
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
-                            <Avatar
-                              name={`${m.first_name} ${m.last_name}`}
-                            />
+                            <Avatar name={`${m.first_name} ${m.last_name}`} />
                             <span className="font-medium text-sm truncate max-w-[100px]">
                               {m.first_name} {m.last_name}
                             </span>

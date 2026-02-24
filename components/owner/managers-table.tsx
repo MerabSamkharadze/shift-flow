@@ -76,20 +76,20 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
   }
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
-      <table className="w-full text-sm">
+    <div className="rounded-lg border border-border overflow-hidden overflow-x-auto">
+      <table className="w-full text-sm min-w-[600px]">
         <thead>
           <tr className="border-b border-border bg-muted/40">
-            <th className="text-left font-medium text-muted-foreground px-4 py-3">
+            <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
               Name
             </th>
-            <th className="text-left font-medium text-muted-foreground px-4 py-3">
+            <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
               Email
             </th>
-            <th className="text-left font-medium text-muted-foreground px-4 py-3">
+            <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
               Status
             </th>
-            <th className="text-left font-medium text-muted-foreground px-4 py-3">
+            <th className="text-left font-medium text-muted-foreground px-4 py-3 whitespace-nowrap">
               Added
             </th>
             <th className="px-4 py-3" />
@@ -105,14 +105,14 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
                   i !== managers.length - 1 ? "border-b border-border" : ""
                 }
               >
-                <td className="px-4 py-3 font-medium">
+                <td className="px-4 py-3 font-medium whitespace-nowrap">
                   {m.first_name} {m.last_name}
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">{m.email}</td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{m.email}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
                   <StatusBadge status={status} />
                 </td>
-                <td className="px-4 py-3 text-muted-foreground">
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                   {new Date(m.created_at).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",

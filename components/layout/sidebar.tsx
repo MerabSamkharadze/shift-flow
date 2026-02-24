@@ -1,6 +1,7 @@
 import { NavLinks } from "./nav-links";
 import { LogoutButton } from "./logout-button";
 import { NotificationBell } from "./notification-bell";
+import { ModeToggle } from "@/components/mode-toggle";
 import type { UserRole } from "@/lib/types";
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -55,6 +56,9 @@ export function Sidebar({ role, firstName, lastName, email, userId }: Props) {
               {ROLE_LABEL[role]}
             </p>
           </div>
+        </div>
+        <div className="flex items-center justify-between px-3 py-1">
+          <ModeToggle />
         </div>
         <LogoutButton />
       </div>

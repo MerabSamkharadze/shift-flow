@@ -2,6 +2,7 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getGroupDetailData } from "@/lib/cache";
 import { GroupDetailTabs } from "@/components/manager/group-detail-tabs";
 
 export default async function GroupDetailPage({
@@ -24,65 +25,10 @@ export default async function GroupDetailPage({
 
   if (!profile || profile.role !== "manager") redirect("/manager");
 
-  // Fetch group — manager_id filter enforces ownership
-  const { data: group } = await supabase
-    .from("groups")
-    .select("id, name, color")
-    .eq("id", params.id)
-    .eq("manager_id", profile.id)
-    .single();
+  const data = await getGroupDetailData(params.id, profile.company_id, profile.id);
+  if (!data) notFound();
 
-  if (!group) notFound();
-
-  // Shift templates
-  const { data: templates } = await supabase
-    .from("shift_templates")
-    .select("id, name, start_time, end_time, color")
-    .eq("group_id", group.id)
-    .order("start_time", { ascending: true });
-
-  // Group members with user details
-  const { data: membersRaw } = await supabase
-    .from("group_members")
-    .select("id, user_id, users(id, first_name, last_name, email)")
-    .eq("group_id", group.id);
-
-  type UserDetail = {
-    id: string;
-    first_name: string;
-    last_name: string;
-    email: string;
-  };
-
-  const members = (membersRaw ?? []).map((m) => {
-    const u = m.users as UserDetail | null;
-    return {
-      memberId: m.id,
-      userId: m.user_id,
-      firstName: u?.first_name ?? "",
-      lastName: u?.last_name ?? "",
-      email: u?.email ?? "",
-    };
-  });
-
-  // All active employees in the company not yet in this group
-  const memberUserIds = new Set(members.map((m) => m.userId));
-
-  const { data: allEmployees } = await supabase
-    .from("users")
-    .select("id, first_name, last_name, email")
-    .eq("company_id", profile.company_id)
-    .eq("role", "employee")
-    .eq("is_active", true)
-    .order("first_name");
-
-  const available = (allEmployees ?? [])
-      .filter((e) => !memberUserIds.has(e.id))
-      .map((e) => ({
-        ...e,
-        first_name: e.first_name ?? "", // თუ null-ია, ჩაწერს ცარიელ სტრინგს
-        last_name: e.last_name ?? "",   // თუ null-ია, ჩაწერს ცარიელ სტრინგს
-      }));
+  const { group, templates, members, available } = data;
 
   return (
     <div>
@@ -104,7 +50,7 @@ export default async function GroupDetailPage({
 
       <GroupDetailTabs
         groupId={group.id}
-        templates={templates ?? []}
+        templates={templates}
         members={members}
         available={available}
       />

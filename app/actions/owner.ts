@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -72,7 +72,8 @@ export async function inviteManager(formData: FormData) {
       return { error: profileError.message };
     }
 
-    revalidatePath("/owner/managers");
+    revalidateTag("owner-managers");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -93,7 +94,8 @@ export async function deactivateManager(managerId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/owner/managers");
+    revalidateTag("owner-managers");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };

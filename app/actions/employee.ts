@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -79,8 +79,9 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee");
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -130,8 +131,9 @@ export async function createPublicSwap(shiftId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee");
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -154,7 +156,8 @@ export async function acceptSwap(swapId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -175,7 +178,8 @@ export async function rejectSwap(swapId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -195,8 +199,8 @@ export async function cancelSwap(swapId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee");
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -227,7 +231,8 @@ export async function takePublicShift(swapId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/employee/swaps");
+    revalidateTag("employee-swaps");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };

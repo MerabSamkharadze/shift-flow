@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getOwnerManagersData } from "@/lib/cache";
 import { InviteManagerDialog } from "@/components/owner/invite-manager-dialog";
 import { ManagersTable } from "@/components/owner/managers-table";
 
@@ -19,23 +20,7 @@ export default async function ManagersPage() {
 
   if (!profile || profile.role !== "owner") redirect("/owner");
 
-
-
-  const { data: managersData } = await supabase
-      .from("users")
-      .select(
-          "id, first_name, last_name, email, is_active, must_change_password, created_at",
-      )
-      .eq("company_id", profile.company_id)
-      .eq("role", "manager")
-      .order("created_at", { ascending: false });
-
-  // მონაცემების "გასუფთავება" null-ებისგან
-  const managers = (managersData ?? []).map((m) => ({
-    ...m,
-    first_name: m.first_name ?? "",
-    last_name: m.last_name ?? "",
-  }));
+  const { managers } = await getOwnerManagersData(profile.company_id);
 
   return (
       <div>

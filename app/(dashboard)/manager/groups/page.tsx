@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getManagerGroupsData } from "@/lib/cache";
 import { CreateGroupDialog } from "@/components/manager/create-group-dialog";
 import { GroupRowActions } from "@/components/manager/group-row-actions";
 
@@ -20,11 +21,7 @@ export default async function GroupsPage() {
 
   if (!profile || profile.role !== "manager") redirect("/manager");
 
-  const { data: groups } = await supabase
-    .from("groups")
-    .select("id, name, color, shift_templates(id), group_members(id)")
-    .eq("manager_id", profile.id)
-    .order("created_at", { ascending: false });
+  const { groups } = await getManagerGroupsData(profile.id);
 
   return (
     <div>

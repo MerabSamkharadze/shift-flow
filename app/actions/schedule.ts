@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
@@ -60,7 +60,10 @@ export async function createSchedule(groupId: string, weekStart: string) {
 
     if (error) return { scheduleId: null, error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { scheduleId: data.id, error: null };
   } catch {
     return { scheduleId: null, error: "Something went wrong" };
@@ -149,7 +152,10 @@ export async function copyFromLastWeek(groupId: string, weekStart: string) {
       await supabase.from("shifts").insert(newShifts);
     }
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { scheduleId: newSchedule.id, error: null };
   } catch {
     return { scheduleId: null, error: "Something went wrong" };
@@ -179,7 +185,10 @@ export async function publishSchedule(scheduleId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -234,7 +243,10 @@ export async function addShift(
 
     if (error) return { shiftId: null, error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { shiftId: data.id, error: null };
   } catch {
     return { shiftId: null, error: "Something went wrong" };
@@ -265,7 +277,10 @@ export async function updateShift(shiftId: string, templateId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -285,7 +300,10 @@ export async function removeShift(shiftId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -302,7 +320,10 @@ export async function addShiftNote(shiftId: string, note: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -327,7 +348,10 @@ export async function saveExtraHours(
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };

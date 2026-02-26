@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { getOwnerDashboardData } from "@/lib/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,8 +15,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MonthlyReportButton } from "@/components/owner/monthly-report-button";
-
-export const dynamic = "force-dynamic";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -104,7 +102,6 @@ function StatusBadge({ status }: { status: ManagerStatus }) {
 
 export default async function OwnerDashboardPage() {
   const supabase = createClient();
-  const service = createServiceClient();
 
   const {
     data: { user },
@@ -120,188 +117,41 @@ export default async function OwnerDashboardPage() {
   if (!profile) redirect("/auth/signout");
   if (profile.role !== "owner") redirect(`/${profile.role}`);
 
-  // ── 1. Stat counts ─────────────────────────────────────────────────────────
-  const [
-    { count: managerCount },
-    { count: employeeCount },
-    { count: groupCount },
-  ] = await Promise.all([
-    service
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("company_id", profile.company_id)
-      .eq("role", "manager")
-      .eq("is_active", true),
-    service
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("company_id", profile.company_id)
-      .eq("role", "employee")
-      .eq("is_active", true),
-    service
-      .from("groups")
-      .select("id", { count: "exact", head: true })
-      .eq("company_id", profile.company_id)
-      .eq("is_active", true),
-  ]);
-
-  // ── 2. Pending swaps (company-wide via schedules chain) ────────────────────
-  const { data: companyGroups } = await service
-    .from("groups")
-    .select("id")
-    .eq("company_id", profile.company_id);
-
-  const companyGroupIds = (companyGroups ?? []).map((g) => g.id);
-
-  const { data: companySchedules } = companyGroupIds.length
-    ? await service
-        .from("schedules")
-        .select("id")
-        .in("group_id", companyGroupIds)
-    : { data: [] as { id: string }[] };
-
-  const companyScheduleIds = (companySchedules ?? []).map((s) => s.id);
-
-  const { data: companyShifts } = companyScheduleIds.length
-    ? await service
-        .from("shifts")
-        .select("id")
-        .in("schedule_id", companyScheduleIds)
-    : { data: [] as { id: string }[] };
-
-  const companyShiftIds = (companyShifts ?? []).map((s) => s.id);
-
-  const { data: pendingSwaps, count: pendingSwapCount } = companyShiftIds.length
-    ? await service
-        .from("shift_swaps")
-        .select(
-          "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
-          { count: "exact" },
-        )
-        .in("shift_id", companyShiftIds)
-        .in("status", ["accepted_by_employee", "pending_manager"])
-        .order("requested_at", { ascending: false })
-        .limit(5)
-    : {
-        data: [] as {
-          id: string;
-          shift_id: string;
-          from_user_id: string;
-          to_user_id: string | null;
-          accepted_by: string | null;
-          requested_at: string | null;
-        }[],
-        count: 0,
-      };
-
-  // ── 3. Managers list ───────────────────────────────────────────────────────
-  const { data: managersData } = await service
-    .from("users")
-    .select(
-      "id, first_name, last_name, email, is_active, must_change_password, created_at",
-    )
-    .eq("company_id", profile.company_id)
-    .eq("role", "manager")
-    .order("created_at", { ascending: false })
-    .limit(6);
-
-  const managers = (managersData ?? []).map((m) => ({
-    ...m,
-    first_name: m.first_name ?? "",
-    last_name: m.last_name ?? "",
-    status: (!m.is_active
-      ? "inactive"
-      : m.must_change_password
-        ? "pending"
-        : "active") as ManagerStatus,
-  }));
-
-  // ── 4. User names for pending swaps ────────────────────────────────────────
-  const swapUserIds = [
-    ...new Set([
-      ...(pendingSwaps ?? []).map((s) => s.from_user_id),
-      ...(pendingSwaps ?? [])
-        .map((s) => s.to_user_id)
-        .filter((id): id is string => id !== null),
-      ...(pendingSwaps ?? [])
-        .map((s) => s.accepted_by)
-        .filter((id): id is string => id !== null),
-    ]),
-  ];
-
-  const { data: swapUsers } = swapUserIds.length
-    ? await service
-        .from("users")
-        .select("id, first_name, last_name")
-        .in("id", swapUserIds)
-    : {
-        data: [] as {
-          id: string;
-          first_name: string | null;
-          last_name: string | null;
-        }[],
-      };
-
-  const swapUserMap = new Map(
-    (swapUsers ?? []).map((u) => [
-      u.id,
-      `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
-    ]),
-  );
-
-  // ── 5. Recent activity logs ────────────────────────────────────────────────
-  const { data: activityLogs } = await service
-    .from("activity_logs")
-    .select("id, user_id, action, entity_type, created_at")
-    .eq("company_id", profile.company_id)
-    .order("created_at", { ascending: false })
-    .limit(5);
-
-  const actorIds = [...new Set((activityLogs ?? []).map((l) => l.user_id))];
-
-  const { data: actorUsers } = actorIds.length
-    ? await service
-        .from("users")
-        .select("id, first_name, last_name")
-        .in("id", actorIds)
-    : {
-        data: [] as {
-          id: string;
-          first_name: string | null;
-          last_name: string | null;
-        }[],
-      };
-
-  const actorMap = new Map(
-    (actorUsers ?? []).map((u) => [
-      u.id,
-      `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
-    ]),
-  );
+  // ── Cached data fetch ───────────────────────────────────────────────────────
+  const {
+    managerCount,
+    employeeCount,
+    groupCount,
+    managers,
+    pendingSwaps,
+    pendingSwapCount,
+    activityLogs,
+    userNameMap,
+  } = await getOwnerDashboardData(profile.company_id);
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = [
     {
       label: "Total Employees",
-      value: employeeCount ?? 0,
+      value: employeeCount,
       icon: Users,
       href: null,
     },
     {
       label: "Active Managers",
-      value: managerCount ?? 0,
+      value: managerCount,
       icon: Briefcase,
       href: "/owner/managers",
     },
     {
       label: "Active Groups",
-      value: groupCount ?? 0,
+      value: groupCount,
       icon: LayoutGrid,
       href: null,
     },
     {
       label: "Pending Swaps",
-      value: pendingSwapCount ?? 0,
+      value: pendingSwapCount,
       icon: ArrowLeftRight,
       href: null,
     },
@@ -441,25 +291,25 @@ export default async function OwnerDashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            {(pendingSwaps ?? []).length === 0 ? (
+            {pendingSwaps.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
                 No swap requests pending approval.
               </p>
             ) : (
               <ul className="divide-y divide-border">
-                {(pendingSwaps ?? []).map((swap) => {
+                {pendingSwaps.map((swap) => {
                   const recipientId = swap.to_user_id ?? swap.accepted_by;
                   return (
                     <li key={swap.id} className="py-3">
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm">
                           <span className="font-medium">
-                            {swapUserMap.get(swap.from_user_id) ?? "Unknown"}
+                            {userNameMap[swap.from_user_id] ?? "Unknown"}
                           </span>
                           <span className="text-muted-foreground"> → </span>
                           {recipientId ? (
                             <span className="font-medium">
-                              {swapUserMap.get(recipientId) ?? "Unknown"}
+                              {userNameMap[recipientId] ?? "Unknown"}
                             </span>
                           ) : (
                             <span className="font-medium text-violet-600 dark:text-violet-400">
@@ -478,9 +328,9 @@ export default async function OwnerDashboardPage() {
                 })}
               </ul>
             )}
-            {(pendingSwapCount ?? 0) > 5 && (
+            {pendingSwapCount > 5 && (
               <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                +{(pendingSwapCount ?? 0) - 5} more pending across the company
+                +{pendingSwapCount - 5} more pending across the company
               </p>
             )}
           </CardContent>
@@ -500,14 +350,14 @@ export default async function OwnerDashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-0">
-            {(activityLogs ?? []).length === 0 ? (
+            {activityLogs.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
                 No activity recorded yet.
               </p>
             ) : (
               <ul className="space-y-3">
-                {(activityLogs ?? []).map((log) => {
-                  const actorName = actorMap.get(log.user_id) ?? "Someone";
+                {activityLogs.map((log) => {
+                  const actorName = userNameMap[log.user_id] ?? "Someone";
                   return (
                     <li key={log.id} className="flex items-start gap-3">
                       <Avatar name={actorName} />

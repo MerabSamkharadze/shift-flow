@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
@@ -48,7 +48,8 @@ export async function createGroup(formData: FormData) {
 
     if (error) return { groupId: null, error: error.message };
 
-    revalidatePath("/manager/groups");
+    revalidateTag("manager-groups");
+    revalidateTag("manager-dashboard");
     return { groupId: data.id, error: null };
   } catch {
     return { groupId: null, error: "Something went wrong" };
@@ -66,7 +67,8 @@ export async function deleteGroup(groupId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/groups");
+    revalidateTag("manager-groups");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -87,7 +89,8 @@ export async function updateGroup(groupId: string, name: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/groups");
+    revalidateTag("manager-groups");
+    revalidateTag("manager-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -127,7 +130,8 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
 
     if (error) return { error: error.message };
 
-    revalidatePath(`/manager/groups/${groupId}`);
+    revalidateTag("group-detail");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -144,7 +148,8 @@ export async function deleteShiftTemplate(templateId: string, groupId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath(`/manager/groups/${groupId}`);
+    revalidateTag("group-detail");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -175,7 +180,8 @@ export async function addGroupMember(groupId: string, userId: string) {
       return { error: error.message };
     }
 
-    revalidatePath(`/manager/groups/${groupId}`);
+    revalidateTag("group-detail");
+    revalidateTag("employee-team");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -192,7 +198,8 @@ export async function removeGroupMember(memberId: string, groupId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath(`/manager/groups/${groupId}`);
+    revalidateTag("group-detail");
+    revalidateTag("employee-team");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -239,7 +246,8 @@ export async function inviteEmployee(formData: FormData) {
       return { error: profileError.message };
     }
 
-    revalidatePath("/manager/employees");
+    revalidateTag("manager-dashboard");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -260,7 +268,8 @@ export async function deactivateEmployee(employeeId: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/employees");
+    revalidateTag("manager-dashboard");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -311,8 +320,11 @@ export async function approveSwap(swapId: string) {
 
     if (swapError) return { error: swapError.message };
 
-    revalidatePath("/manager/swaps");
-    revalidatePath("/manager/schedule");
+    revalidateTag("manager-swaps");
+    revalidateTag("manager-schedule");
+    revalidateTag("manager-dashboard");
+    revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };
@@ -336,7 +348,9 @@ export async function rejectSwap(swapId: string, note?: string) {
 
     if (error) return { error: error.message };
 
-    revalidatePath("/manager/swaps");
+    revalidateTag("manager-swaps");
+    revalidateTag("manager-dashboard");
+    revalidateTag("employee-swaps");
     return { error: null };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Something went wrong" };

@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   "/auth/confirm",
   "/auth/callback",
   "/auth/change-password",
+  "/auth/update-password",
   "/auth/error",
   "/auth/sign-up-success",
 ];

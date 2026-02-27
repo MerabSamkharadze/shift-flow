@@ -1,23 +1,12 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getManagerSwapsData } from "@/lib/cache";
 import { SwapsClient, type SwapRow } from "@/components/manager/swaps-client";
 
 export default async function SwapsPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "manager") redirect("/manager");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
+  if (profile.role !== "manager") redirect("/manager");
 
   const { swaps } = await getManagerSwapsData(profile.id);
 

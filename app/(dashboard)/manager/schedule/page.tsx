@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { getScheduleData } from "@/lib/cache";
+import { getSessionProfile } from "@/lib/auth";
+import { getManagerGroupsList, getScheduleData } from "@/lib/cache";
 import {
   ScheduleClient,
   type GroupRow,
@@ -26,37 +26,14 @@ export default async function SchedulePage({
 }: {
   searchParams: { group?: string; week?: string };
 }) {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, company_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) redirect("/auth/signout");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "manager") redirect(`/${profile.role}`);
 
   const weekStart = getMonday(searchParams.week);
 
-  // We need to know the groups first to resolve selectedGroupId,
-  // but getScheduleData fetches groups too. We'll do a two-step:
-  // first call with a tentative groupId, the cached fn returns groups.
-  // Actually, let's fetch groups list from the cached data with a placeholder,
-  // then use it. The cache fn handles empty groups gracefully.
-
-  // First, resolve selectedGroupId — we need groups list.
-  // We'll call getScheduleData with a tentative selectedGroupId.
-  // The function always fetches groups for the manager anyway.
-  const tentativeGroupId = searchParams.group ?? "";
-  const data = await getScheduleData(profile.id, tentativeGroupId || "__placeholder__", weekStart);
-
-  const groups: GroupRow[] = data.groups;
+  // Step 1: lightweight groups fetch to resolve selectedGroupId
+  const { groups } = await getManagerGroupsList(profile.id);
 
   if (groups.length === 0) {
     return (
@@ -76,23 +53,21 @@ export default async function SchedulePage({
     );
   }
 
-  // Resolve selected group
+  // Step 2: resolve selected group
   const selectedGroupId =
     searchParams.group && groups.some((g) => g.id === searchParams.group)
       ? searchParams.group
       : groups[0].id;
 
-  // If the tentative group was wrong, re-fetch with the correct one
-  const finalData =
-    tentativeGroupId === selectedGroupId
-      ? data
-      : await getScheduleData(profile.id, selectedGroupId, weekStart);
+  // Step 3: single fetch with correct groupId
+  const data = await getScheduleData(profile.id, selectedGroupId, weekStart);
 
-  const templates: TemplateRow[] = finalData.templates;
-  const members: MemberRow[] = finalData.members;
-  const schedule: ScheduleRow | null = finalData.schedule as ScheduleRow | null;
-  const shifts: ShiftRow[] = finalData.shifts;
-  const prevScheduleExists = finalData.prevScheduleExists;
+  const allGroups: GroupRow[] = data.groups.length > 0 ? data.groups : groups;
+  const templates: TemplateRow[] = data.templates;
+  const members: MemberRow[] = data.members;
+  const schedule: ScheduleRow | null = data.schedule as ScheduleRow | null;
+  const shifts: ShiftRow[] = data.shifts;
+  const prevScheduleExists = data.prevScheduleExists;
 
   return (
     <div>
@@ -104,7 +79,7 @@ export default async function SchedulePage({
       </div>
 
       <ScheduleClient
-        groups={groups}
+        groups={allGroups}
         selectedGroupId={selectedGroupId}
         weekStart={weekStart}
         members={members}

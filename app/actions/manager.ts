@@ -247,6 +247,7 @@ export async function inviteEmployee(formData: FormData) {
     }
 
     revalidateTag("manager-dashboard");
+    revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
     return { error: null };
   } catch {
@@ -269,6 +270,7 @@ export async function deactivateEmployee(employeeId: string) {
     if (error) return { error: error.message };
 
     revalidateTag("manager-dashboard");
+    revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
     return { error: null };
   } catch {

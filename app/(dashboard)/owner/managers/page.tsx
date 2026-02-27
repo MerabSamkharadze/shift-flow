@@ -1,24 +1,13 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getOwnerManagersData } from "@/lib/cache";
 import { InviteManagerDialog } from "@/components/owner/invite-manager-dialog";
 import { ManagersTable } from "@/components/owner/managers-table";
 
 export default async function ManagersPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("company_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "owner") redirect("/owner");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
+  if (profile.role !== "owner") redirect("/owner");
 
   const { managers } = await getOwnerManagersData(profile.company_id);
 

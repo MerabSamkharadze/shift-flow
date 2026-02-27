@@ -1,25 +1,14 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getManagerGroupsData } from "@/lib/cache";
 import { CreateGroupDialog } from "@/components/manager/create-group-dialog";
 import { GroupRowActions } from "@/components/manager/group-row-actions";
 
 export default async function GroupsPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "manager") redirect("/manager");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
+  if (profile.role !== "manager") redirect("/manager");
 
   const { groups } = await getManagerGroupsData(profile.id);
 

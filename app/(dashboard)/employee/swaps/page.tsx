@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getEmployeeSwapsData } from "@/lib/cache";
 import {
   SwapsClient,
@@ -10,20 +10,8 @@ import {
 } from "@/components/employee/swaps-client";
 
 export default async function EmployeeSwapsPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) redirect("/auth/signout");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "employee") redirect(`/${profile.role}`);
 
   const { mySwaps, incoming, publicBoard, myClaims } =

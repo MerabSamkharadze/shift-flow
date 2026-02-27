@@ -1,6 +1,78 @@
 import { unstable_cache } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 
+// ─── Manager Employees ───────────────────────────────────────────────────────
+
+export const getManagerEmployeesData = unstable_cache(
+  async (managerId: string) => {
+    const service = createServiceClient();
+
+    const { data: employees } = await service
+      .from("users")
+      .select(
+        "id, first_name, last_name, email, is_active, must_change_password, created_at",
+      )
+      .eq("created_by", managerId)
+      .eq("role", "employee")
+      .order("created_at", { ascending: false });
+
+    const employeeIds = (employees ?? []).map((e) => e.id);
+
+    const groupsByEmployee = new Map<
+      string,
+      { id: string; name: string; color: string }[]
+    >();
+
+    if (employeeIds.length > 0) {
+      const { data: memberships } = await service
+        .from("group_members")
+        .select("user_id, groups(id, name, color)")
+        .in("user_id", employeeIds);
+
+      for (const m of memberships ?? []) {
+        const g = m.groups as { id: string; name: string; color: string } | null;
+        if (!g) continue;
+        const list = groupsByEmployee.get(m.user_id) ?? [];
+        list.push(g);
+        groupsByEmployee.set(m.user_id, list);
+      }
+    }
+
+    const rows = (employees ?? []).map((e) => ({
+      id: e.id,
+      firstName: e.first_name ?? "",
+      lastName: e.last_name ?? "",
+      email: e.email,
+      isActive: e.is_active,
+      mustChangePassword: e.must_change_password,
+      createdAt: e.created_at ?? "",
+      groups: groupsByEmployee.get(e.id) ?? [],
+    }));
+
+    return { rows };
+  },
+  ["manager-employees"],
+  { tags: ["manager-employees"], revalidate: 30 },
+);
+
+// ─── Manager Groups List (lightweight) ───────────────────────────────────────
+
+export const getManagerGroupsList = unstable_cache(
+  async (managerId: string) => {
+    const service = createServiceClient();
+
+    const { data: groups } = await service
+      .from("groups")
+      .select("id, name, color")
+      .eq("manager_id", managerId)
+      .order("name");
+
+    return { groups: (groups ?? []).map((g) => ({ id: g.id, name: g.name, color: g.color })) };
+  },
+  ["manager-groups-list"],
+  { tags: ["manager-groups"], revalidate: 30 },
+);
+
 // ─── Owner Dashboard ──────────────────────────────────────────────────────────
 
 export const getOwnerDashboardData = unstable_cache(

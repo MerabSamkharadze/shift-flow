@@ -22,7 +22,7 @@ export default async function ChangePasswordPage() {
   if (!profile) redirect("/auth/login");
 
   // Flag already cleared — send to their dashboard
-  if (!profile.must_change_password) redirect(`/${profile.role}`);
+  if (!profile.must_change_password) redirect(profile.role === "employee" ? "/employee" : "/dashboard");
 
   return (
     <div className="flex min-h-svh w-full items-center justify-center p-6">

@@ -70,6 +70,11 @@ Browser → /dashboard?view=employees
 |---|---|
 | `lib/cache.ts` | +3 new cache functions + extended `getManagerDashboardData` |
 | `app/api/export-monthly-report/route.ts` | Role check: `owner`-only → `owner \|\| manager` |
+| `middleware.ts` | Owner/Manager → `/dashboard`, Employee → `/employee`, ძველი route-ების redirect |
+| `components/login-form.tsx` | Login redirect: owner/manager → `/dashboard`, employee → `/employee` |
+| `app/page.tsx` | Root redirect: same logic as login |
+| `app/auth/change-password/page.tsx` | Post-password-change redirect: same logic |
+| `components/auth/change-password-form.tsx` | Client-side redirect: same logic |
 | `app/globals.css` | New design system styles |
 | `app/layout.tsx` | Font/theme updates |
 | `app/(dashboard)/layout.tsx` | Layout adjustments |
@@ -205,7 +210,51 @@ All actions are called via `useTransition` → `startTransition(async () => { ..
 
 ---
 
-## Auth & Role Guard
+## Routing & Auth
+
+### Role Model
+
+- **Owner** — კომპანიის მფლობელი. ქმნის მენეჯერებს, ანაწილებს ფილიალებში. ხედავს ყველაფერს + "Managers" view.
+- **Manager** — ფილიალის მენეჯერი. განაგებს თანამშრომლებს, ცვლებს, განრიგს. ხედავს ყველაფერს owner-ის გარდა "Managers" view-ისა.
+- **Employee** — თანამშრომელი. ცალკე dashboard `/employee`-ზე, `/dashboard`-ზე არ შედის.
+
+Owner და Manager ორივე `/dashboard`-ს იყენებს — ფუნქციონალი იდენტურია, განსხვავება მხოლოდ "Managers" tab-ის ხილვადობაა.
+
+### Login Redirect Flow
+
+```
+Login → role check:
+  owner   → /dashboard
+  manager → /dashboard
+  employee → /employee
+
+Change Password → same redirect logic
+Root page (/)   → same redirect logic
+```
+
+**Modified files:**
+- `components/login-form.tsx` — `router.push(role === "employee" ? "/employee" : "/dashboard")`
+- `app/page.tsx` — `redirect(role === "employee" ? "/employee" : "/dashboard")`
+- `app/auth/change-password/page.tsx` — same pattern (server-side)
+- `components/auth/change-password-form.tsx` — same pattern (client-side)
+
+### Middleware Route Protection
+
+```
+middleware.ts:
+  Owner/Manager:
+    /owner, /manager → redirect → /dashboard  (ძველი route-ები redirect-დება)
+    /employee        → redirect → /dashboard  (cross-role block)
+    /dashboard       → allowed
+
+  Employee:
+    /owner, /manager, /dashboard → redirect → /employee  (cross-role block)
+    /employee                    → allowed
+```
+
+`sf-role` cookie იწერება login-ის დროს და middleware UX-level guard-ად მუშაობს. ნამდვილი უსაფრთხოება Supabase RLS policies-ით არის უზრუნველყოფილი.
+
+### Dashboard-Level Auth
 
 ```
 page.tsx:
@@ -215,10 +264,10 @@ page.tsx:
   4. Pass user with role to DashboardClient
 
 Sidebar.tsx:
-  - "Managers" nav item only visible when user.role === "owner"
+  - "Managers" nav item visible only when user.role === "owner"
 
 Managers.tsx:
-  - Shows "Only available for owners" message if userRole !== "owner"
+  - Shows "Only available for owners" if userRole !== "owner"
 
 page.tsx (managers view):
   - Only calls getOwnerManagersData if role === "owner"
@@ -330,12 +379,16 @@ npx next build
 
 ## How To Test
 
-1. `npm run dev` → visit `/dashboard`
-2. Should redirect to `/auth/login` if not authenticated
-3. Login as **manager** → see real employee count, shifts, swaps in dashboard
-4. Click sidebar items → URL changes to `?view=X`, real data loads
-5. **Employees:** Add employee → check email sent, new user appears
-6. **Managers (owner only):** Add manager → check email sent
-7. **Notifications:** Should show real unread notifications, real-time updates
-8. **Monthly Report:** Click "Download Excel" → downloads real report
-9. **Hours Summary:** Change month → data updates via URL navigation
+1. `npm run dev` → visit `/auth/login`
+2. **Login as manager** → should redirect to `/dashboard` (not `/manager`)
+3. **Login as owner** → should redirect to `/dashboard` (not `/owner`)
+4. **Login as employee** → should redirect to `/employee` (not `/dashboard`)
+5. Visit `/manager` while logged in as manager → should redirect to `/dashboard`
+6. Visit `/dashboard` while logged in as employee → should redirect to `/employee`
+7. Dashboard shows real employee count, shifts, swaps
+8. Click sidebar items → URL changes to `?view=X`, real data loads
+9. **Employees:** Add employee → check email sent, new user appears
+10. **Managers (owner only):** Add manager → check email sent. Manager user should see all views except "Managers"
+11. **Notifications:** Should show real unread notifications, real-time updates
+12. **Monthly Report:** Click "Download Excel" → downloads real report
+13. **Hours Summary:** Change month → data updates via URL navigation

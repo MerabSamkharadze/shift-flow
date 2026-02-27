@@ -11,12 +11,6 @@ const PUBLIC_PATHS = [
   "/auth/sign-up-success",
 ];
 
-const ROLE_HOME: Record<string, string> = {
-  owner: "/owner",
-  manager: "/manager",
-  employee: "/employee",
-};
-
 export async function middleware(request: NextRequest) {
   const { response, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
@@ -36,15 +30,30 @@ export async function middleware(request: NextRequest) {
   // Role-based route protection via sf-role cookie (set at login).
   // UX guard only — actual security is enforced by RLS policies.
   const roleCookie = request.cookies.get("sf-role")?.value;
-  if (roleCookie && roleCookie in ROLE_HOME) {
-    const myRoot = ROLE_HOME[roleCookie];
-    const accessingWrongRole = Object.entries(ROLE_HOME).some(
-      ([role, root]) => role !== roleCookie && pathname.startsWith(root),
-    );
-    if (accessingWrongRole) {
-      const url = request.nextUrl.clone();
-      url.pathname = myRoot;
-      return NextResponse.redirect(url);
+
+  if (roleCookie) {
+    // Owner/Manager: redirect old /owner, /manager routes → /dashboard
+    if (roleCookie === "owner" || roleCookie === "manager") {
+      if (pathname.startsWith("/owner") || pathname.startsWith("/manager")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
+        return NextResponse.redirect(url);
+      }
+      // Block owner/manager from accessing /employee
+      if (pathname.startsWith("/employee")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/dashboard";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // Employee: block from /owner, /manager, /dashboard
+    if (roleCookie === "employee") {
+      if (pathname.startsWith("/owner") || pathname.startsWith("/manager") || pathname.startsWith("/dashboard")) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/employee";
+        return NextResponse.redirect(url);
+      }
     }
   }
 

@@ -75,7 +75,7 @@ export function LoginForm({
     if (profile.must_change_password) {
       router.push("/auth/change-password")
     } else {
-      router.push(`/${profile.role}`)
+      router.push(profile.role === "employee" ? "/employee" : "/dashboard")
     }
   }
 

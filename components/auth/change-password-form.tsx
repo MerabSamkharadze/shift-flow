@@ -56,7 +56,7 @@ export function ChangePasswordForm({ role }: { role: string }) {
     }
 
     // 3. Redirect to the user's dashboard
-    router.push(`/${role}`)
+    router.push(role === "employee" ? "/employee" : "/dashboard")
   }
 
   return (

@@ -23,5 +23,5 @@ export default async function RootPage() {
 
   if (profile.must_change_password) redirect("/auth/change-password");
 
-  redirect(`/${profile.role}`);
+  redirect(profile.role === "employee" ? "/employee" : "/dashboard");
 }

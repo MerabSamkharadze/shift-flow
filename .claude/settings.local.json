@@ -11,7 +11,12 @@
       "Bash(npm uninstall:*)",
       "Bash(printf \"\"use client\"\";\\\\n\\\\n:*)",
       "Bash(npx next:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(curl:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

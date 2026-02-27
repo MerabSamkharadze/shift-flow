@@ -35,6 +35,16 @@ export function ConfirmClient() {
       const hash = window.location.hash.substring(1);
       if (hash) {
         const params = new URLSearchParams(hash);
+
+        // Check for errors in hash fragment (e.g. expired token)
+        const hashError = params.get("error_description") || params.get("error");
+        if (hashError) {
+          router.replace(
+            `/auth/error?error=${encodeURIComponent(hashError)}`,
+          );
+          return;
+        }
+
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
 
@@ -49,7 +59,8 @@ export function ConfirmClient() {
               `/auth/error?error=${encodeURIComponent(error.message)}`,
             );
           } else {
-            router.replace(next);
+            // Invited users must set a password before proceeding.
+            router.replace("/auth/change-password");
           }
           return;
         }

@@ -26,9 +26,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet" />
+      </head>
       <body className={`${inter.className} antialiased`}>
         <NextTopLoader
-          color="#3b82f6"
+          color="#F5A623"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}

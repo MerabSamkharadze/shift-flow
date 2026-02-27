@@ -283,6 +283,34 @@ export const getManagerDashboardData = unstable_cache(
       (allNeededUsers ?? []).map((u) => [u.id, `${u.first_name} ${u.last_name}`]),
     );
 
+    // Shifts this week (Mon-Sun containing today)
+    const todayDate = new Date();
+    const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const weekMonday = new Date(todayDate);
+    weekMonday.setDate(todayDate.getDate() + mondayOffset);
+    const weekSunday = new Date(weekMonday);
+    weekSunday.setDate(weekMonday.getDate() + 6);
+    const weekStartStr = localDateStr(weekMonday);
+    const weekEndStr = localDateStr(weekSunday);
+
+    const shiftsThisWeek = (allShifts ?? []).filter(
+      (s) => s.date >= weekStartStr && s.date <= weekEndStr,
+    ).length;
+
+    // Monthly hours (current month)
+    const monthStartStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastDayOfMonth = new Date(todayDate.getFullYear(), todayDate.getMonth() + 1, 0).getDate();
+    const monthEndStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+    const monthlyHours = (allShifts ?? [])
+      .filter((s) => s.date >= monthStartStr && s.date <= monthEndStr)
+      .reduce((sum, s) => {
+        const [sh, sm] = s.start_time.split(":").map(Number);
+        const [eh, em] = s.end_time.split(":").map(Number);
+        return sum + Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+      }, 0);
+
     return {
       groups: groups ?? [],
       employeeCount: employeeCount ?? 0,
@@ -296,6 +324,8 @@ export const getManagerDashboardData = unstable_cache(
       todayShifts,
       userNameMap,
       today,
+      shiftsThisWeek,
+      monthlyHours: Math.round(monthlyHours),
     };
   },
   ["manager-dashboard"],
@@ -1082,4 +1112,197 @@ export const getTeamScheduleData = unstable_cache(
   },
   ["employee-team"],
   { tags: ["employee-team"], revalidate: 30 },
+);
+
+// ─── Manager Employees ───────────────────────────────────────────────────────
+
+export const getManagerEmployeesData = unstable_cache(
+  async (managerId: string) => {
+    const service = createServiceClient();
+
+    const { data: employeesData } = await service
+      .from("users")
+      .select("id, first_name, last_name, email, is_active, created_at")
+      .eq("created_by", managerId)
+      .eq("role", "employee")
+      .order("created_at", { ascending: false });
+
+    const employees = (employeesData ?? []).map((e) => ({
+      ...e,
+      first_name: e.first_name ?? "",
+      last_name: e.last_name ?? "",
+    }));
+
+    return { employees };
+  },
+  ["manager-employees"],
+  { tags: ["manager-employees"], revalidate: 30 },
+);
+
+// ─── Monthly Report Data ─────────────────────────────────────────────────────
+
+export const getMonthlyReportData = unstable_cache(
+  async (companyId: string, month: string) => {
+    const service = createServiceClient();
+
+    const [yearStr, monthStr] = month.split("-");
+    const year = parseInt(yearStr, 10);
+    const mo = parseInt(monthStr, 10);
+
+    const monthStart = `${yearStr}-${monthStr}-01`;
+    const lastDay = new Date(year, mo, 0).getDate();
+    const monthEnd = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
+
+    const { data: companySchedules } = await service
+      .from("schedules")
+      .select("id")
+      .eq("company_id", companyId)
+      .lte("week_start_date", monthEnd)
+      .gte("week_end_date", monthStart);
+
+    const scheduleIds = (companySchedules ?? []).map((s) => s.id);
+
+    type RawShift = {
+      assigned_to: string;
+      start_time: string;
+      end_time: string;
+      extra_hours: number | null;
+      users: { first_name: string | null; last_name: string | null } | null;
+    };
+
+    const { data: rawShifts } = scheduleIds.length
+      ? await service
+          .from("shifts")
+          .select(
+            "assigned_to, start_time, end_time, extra_hours, users!shifts_assigned_to_fkey(first_name, last_name)",
+          )
+          .in("schedule_id", scheduleIds)
+          .gte("date", monthStart)
+          .lte("date", monthEnd)
+          .neq("status", "cancelled")
+      : { data: [] as RawShift[] };
+
+    const aggregated = new Map<string, { employeeName: string; regularHours: number; extraHours: number }>();
+
+    for (const raw of (rawShifts ?? []) as unknown as RawShift[]) {
+      const [sh, sm] = raw.start_time.split(":").map(Number);
+      const [eh, em] = raw.end_time.split(":").map(Number);
+      const duration = Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+      const extra = raw.extra_hours ?? 0;
+      const u = raw.users;
+      const name = u
+        ? `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "Unknown"
+        : "Unknown";
+
+      const existing = aggregated.get(raw.assigned_to);
+      if (existing) {
+        existing.regularHours += duration;
+        existing.extraHours += extra;
+      } else {
+        aggregated.set(raw.assigned_to, { employeeName: name, regularHours: duration, extraHours: extra });
+      }
+    }
+
+    const rows = [...aggregated.values()]
+      .map((r) => ({
+        employeeName: r.employeeName,
+        regularHours: Math.round(r.regularHours * 100) / 100,
+        extraHours: Math.round(r.extraHours * 100) / 100,
+      }))
+      .sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+
+    return { rows, month };
+  },
+  ["monthly-report"],
+  { tags: ["monthly-report"], revalidate: 30 },
+);
+
+// ─── Hours Summary Data ──────────────────────────────────────────────────────
+
+export const getHoursSummaryData = unstable_cache(
+  async (managerId: string, month: string) => {
+    const service = createServiceClient();
+
+    const [yearStr, monthStr] = month.split("-");
+    const year = parseInt(yearStr, 10);
+    const mo = parseInt(monthStr, 10);
+
+    const monthStart = `${yearStr}-${monthStr}-01`;
+    const lastDay = new Date(year, mo, 0).getDate();
+    const monthEnd = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
+
+    // Get manager's groups
+    const { data: groups } = await service
+      .from("groups")
+      .select("id")
+      .eq("manager_id", managerId);
+
+    const groupIds = (groups ?? []).map((g) => g.id);
+    if (groupIds.length === 0) return { employees: [], month };
+
+    // Get schedules for those groups overlapping the month
+    const { data: schedules } = await service
+      .from("schedules")
+      .select("id")
+      .in("group_id", groupIds)
+      .lte("week_start_date", monthEnd)
+      .gte("week_end_date", monthStart);
+
+    const scheduleIds = (schedules ?? []).map((s) => s.id);
+    if (scheduleIds.length === 0) return { employees: [], month };
+
+    // Fetch shifts
+    const { data: shifts } = await service
+      .from("shifts")
+      .select("assigned_to, start_time, end_time, extra_hours")
+      .in("schedule_id", scheduleIds)
+      .gte("date", monthStart)
+      .lte("date", monthEnd)
+      .neq("status", "cancelled");
+
+    // Aggregate per employee
+    const empMap = new Map<string, { totalHours: number; extraHours: number; shiftCount: number }>();
+
+    for (const s of shifts ?? []) {
+      if (!s.assigned_to) continue;
+      const [sh, sm] = s.start_time.split(":").map(Number);
+      const [eh, em] = s.end_time.split(":").map(Number);
+      const duration = Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+      const extra = s.extra_hours ?? 0;
+
+      const existing = empMap.get(s.assigned_to);
+      if (existing) {
+        existing.totalHours += duration + extra;
+        existing.extraHours += extra;
+        existing.shiftCount += 1;
+      } else {
+        empMap.set(s.assigned_to, { totalHours: duration + extra, extraHours: extra, shiftCount: 1 });
+      }
+    }
+
+    // Get user names
+    const userIds = [...empMap.keys()];
+    const { data: users } = userIds.length
+      ? await service.from("users").select("id, first_name, last_name").in("id", userIds)
+      : { data: [] as { id: string; first_name: string | null; last_name: string | null }[] };
+
+    const userNameMap = new Map(
+      (users ?? []).map((u) => [u.id, `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "Unknown"]),
+    );
+
+    const employees = userIds.map((id) => {
+      const data = empMap.get(id)!;
+      return {
+        id,
+        name: userNameMap.get(id) ?? "Unknown",
+        totalHours: Math.round(data.totalHours * 100) / 100,
+        extraHours: Math.round(data.extraHours * 100) / 100,
+        shiftCount: data.shiftCount,
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    return { employees, month };
+  },
+  ["hours-summary"],
+  { tags: ["hours-summary"], revalidate: 30 },
 );

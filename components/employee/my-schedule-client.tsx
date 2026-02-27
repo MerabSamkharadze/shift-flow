@@ -87,12 +87,12 @@ function SwapStatusBadge({ status, type }: { status: string | null; type: string
 function ShiftCard({ shift, onGiveAway }: { shift: ShiftRow; onGiveAway: () => void }) {
   return (
     <div
-      className="rounded-2xl border-l-4 bg-card shadow-sm overflow-hidden"
+      className="rounded-2xl border-l-4 bg-card dark:bg-[#142236] border border-border dark:border-white/[0.07] shadow-sm overflow-hidden hover:dark:bg-[#1A2E45] transition-all duration-200"
       style={{ borderLeftColor: shift.templateColor }}
     >
       <div
         className="px-4 py-4"
-        style={{ backgroundColor: `${shift.templateColor}15` }}
+        style={{ backgroundColor: `${shift.templateColor}10` }}
       >
         <div className="flex items-start justify-between gap-3">
           {/* Left — info */}
@@ -103,29 +103,29 @@ function ShiftCard({ shift, onGiveAway }: { shift: ShiftRow; onGiveAway: () => v
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: shift.groupColor }}
               />
-              <span className="text-xs font-medium text-muted-foreground truncate">
+              <span className="text-xs font-medium text-muted-foreground dark:text-[#7A94AD] truncate">
                 {shift.groupName}
               </span>
             </div>
 
             {/* Time — large and bold */}
-            <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground leading-none">
+            <p className="text-2xl font-bold tabular-nums tracking-tight text-foreground dark:text-[#F0EDE8] leading-none font-['JetBrains_Mono']">
               {fmtTime(shift.startTime)}
-              <span className="text-muted-foreground font-normal mx-1">–</span>
+              <span className="text-muted-foreground dark:text-[#7A94AD] font-normal mx-1">–</span>
               {fmtTime(shift.endTime)}
             </p>
 
             {/* OT badge */}
             {shift.extraHours != null && shift.extraHours > 0 && (
               <div className="flex items-center gap-1.5 mt-2">
-                <span className="text-sm font-semibold text-amber-600 dark:text-amber-400">
+                <span className="text-sm font-semibold text-amber-600 dark:text-[#F5A623]">
                   +{shift.extraHours}h overtime
                 </span>
                 {shift.extraHoursNotes && (
                   <span title={shift.extraHoursNotes} className="cursor-help">
                     <Info
                       size={13}
-                      className="text-amber-500 dark:text-amber-400 shrink-0"
+                      className="text-amber-500 dark:text-[#F5A623] shrink-0"
                     />
                   </span>
                 )}
@@ -140,7 +140,7 @@ function ShiftCard({ shift, onGiveAway }: { shift: ShiftRow; onGiveAway: () => v
             ) : (
               <button
                 onClick={onGiveAway}
-                className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl border border-border bg-background text-sm font-medium transition-colors hover:bg-muted active:scale-95"
+                className="flex items-center gap-1.5 min-h-[44px] px-3 py-2 rounded-xl border border-border dark:border-white/[0.07] bg-background dark:bg-[#0A1628] text-sm font-medium transition-all hover:bg-muted dark:hover:bg-[#1A2E45] active:scale-95 dark:text-[#F0EDE8]"
               >
                 <ArrowLeftRight size={14} className="shrink-0" />
                 <span>Give Away</span>
@@ -238,17 +238,17 @@ export function MyScheduleClient({
         <div className="flex items-center gap-1">
           <button
             onClick={() => router.push(`${pathname}?week=${prevWeek}`)}
-            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted dark:hover:bg-[#1A2E45] transition-colors dark:text-[#F0EDE8]"
             aria-label="Previous week"
           >
             <ChevronLeft size={20} />
           </button>
-          <span className="text-sm font-semibold tabular-nums px-1">
+          <span className="text-sm font-semibold tabular-nums px-1 dark:text-[#F0EDE8] font-['JetBrains_Mono']">
             {fmtShortDate(weekStart)} – {fmtShortDate(weekDates[6])}
           </span>
           <button
             onClick={() => router.push(`${pathname}?week=${nextWeek}`)}
-            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted transition-colors"
+            className="flex items-center justify-center w-10 h-10 rounded-xl hover:bg-muted dark:hover:bg-[#1A2E45] transition-colors dark:text-[#F0EDE8]"
             aria-label="Next week"
           >
             <ChevronRight size={20} />
@@ -258,7 +258,7 @@ export function MyScheduleClient({
         {!isCurrentWeek && (
           <button
             onClick={() => router.push(pathname)}
-            className="h-10 px-3 rounded-xl text-xs font-semibold text-primary hover:bg-muted transition-colors"
+            className="h-10 px-3 rounded-xl text-xs font-semibold text-primary dark:text-[#F5A623] hover:bg-muted dark:hover:bg-[#F5A623]/10 transition-colors"
           >
             Today
           </button>
@@ -280,14 +280,14 @@ export function MyScheduleClient({
               className={cn(
                 "relative flex flex-col items-center gap-0.5 min-w-[44px] py-2.5 rounded-2xl transition-colors shrink-0",
                 isToday
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted",
+                  ? "bg-[#F5A623] text-[#0A1628]"
+                  : "hover:bg-muted dark:hover:bg-[#1A2E45]",
               )}
             >
               <span
                 className={cn(
                   "text-[11px] font-medium",
-                  isToday ? "text-primary-foreground/80" : "text-muted-foreground",
+                  isToday ? "text-[#0A1628]/80" : "text-muted-foreground dark:text-[#7A94AD]",
                 )}
               >
                 {DAY_SHORT[i]}
@@ -295,14 +295,14 @@ export function MyScheduleClient({
               <span
                 className={cn(
                   "text-sm font-bold",
-                  isToday ? "text-primary-foreground" : "text-foreground",
+                  isToday ? "text-[#0A1628]" : "text-foreground dark:text-[#F0EDE8]",
                 )}
               >
                 {new Date(date + "T00:00:00").getDate()}
               </span>
               {/* Dot — days with shifts that aren't today */}
               {hasShifts && !isToday && (
-                <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-primary" />
+                <span className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[#F5A623]" />
               )}
             </button>
           );
@@ -330,7 +330,7 @@ export function MyScheduleClient({
                   {fmtShortDate(date)}
                 </span>
                 {isToday && (
-                  <span className="text-[10px] font-bold uppercase tracking-wide bg-primary text-primary-foreground px-1.5 py-0.5 rounded-full leading-none">
+                  <span className="text-[10px] font-bold uppercase tracking-wide bg-[#F5A623] text-[#0A1628] px-1.5 py-0.5 rounded-full leading-none">
                     Today
                   </span>
                 )}
@@ -338,8 +338,8 @@ export function MyScheduleClient({
 
               {/* Day content */}
               {dayShifts.length === 0 ? (
-                <div className="flex items-center px-4 py-3 rounded-2xl bg-muted/40">
-                  <span className="text-sm text-muted-foreground">Day off</span>
+                <div className="flex items-center px-4 py-3 rounded-2xl bg-muted/40 dark:bg-[#142236] dark:border dark:border-white/[0.07]">
+                  <span className="text-sm text-muted-foreground dark:text-[#7A94AD]">Day off</span>
                 </div>
               ) : (
                 <div className="space-y-2.5">

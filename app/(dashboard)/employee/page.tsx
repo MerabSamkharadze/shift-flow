@@ -35,7 +35,7 @@ export default async function EmployeePage({
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, role")
+    .select("id, role, first_name")
     .eq("id", user.id)
     .single();
 
@@ -48,8 +48,10 @@ export default async function EmployeePage({
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-xl font-bold">My Schedule</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
+        <h1 className="text-2xl md:text-3xl font-['Syne'] font-semibold dark:text-[#F0EDE8]">
+          My Schedule
+        </h1>
+        <p className="text-muted-foreground dark:text-[#7A94AD] text-sm mt-0.5">
           Tap a shift to give it away.
         </p>
       </div>

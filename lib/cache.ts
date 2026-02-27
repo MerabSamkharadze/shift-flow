@@ -263,14 +263,30 @@ export const getManagerDashboardData = unstable_cache(
       .filter((s) => s.date === today)
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
-    // 5. User names
-    const todayUserIds = todayShifts.map((s) => s.assigned_to).filter(Boolean) as string[];
+    // Week shifts (Mon-Sun) — computed after weekStartStr/weekEndStr are available below
+    // (moved weekStart/weekEnd computation earlier)
+    const todayDate_w = new Date();
+    const dayOfWeek_w = todayDate_w.getDay();
+    const mondayOffset_w = dayOfWeek_w === 0 ? -6 : 1 - dayOfWeek_w;
+    const weekMonday_w = new Date(todayDate_w);
+    weekMonday_w.setDate(todayDate_w.getDate() + mondayOffset_w);
+    const weekSunday_w = new Date(weekMonday_w);
+    weekSunday_w.setDate(weekMonday_w.getDate() + 6);
+    const weekStartStr_w = localDateStr(weekMonday_w);
+    const weekEndStr_w = localDateStr(weekSunday_w);
+
+    const weekShifts = (allShifts ?? [])
+      .filter((s) => s.date >= weekStartStr_w && s.date <= weekEndStr_w)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time));
+
+    // 5. User names (use weekShifts users — superset of todayShifts)
+    const weekUserIds = weekShifts.map((s) => s.assigned_to).filter(Boolean) as string[];
     const swapUserIds = [
       ...(pendingSwaps ?? []).map((s) => s.from_user_id),
       ...(pendingSwaps ?? []).map((s) => s.to_user_id).filter((id): id is string => id !== null),
       ...(pendingSwaps ?? []).map((s) => s.accepted_by).filter((id): id is string => id !== null),
     ];
-    const allNeededUserIds = [...new Set([...todayUserIds, ...swapUserIds])];
+    const allNeededUserIds = [...new Set([...weekUserIds, ...swapUserIds])];
 
     const { data: allNeededUsers } = allNeededUserIds.length
       ? await service
@@ -283,25 +299,13 @@ export const getManagerDashboardData = unstable_cache(
       (allNeededUsers ?? []).map((u) => [u.id, `${u.first_name} ${u.last_name}`]),
     );
 
-    // Shifts this week (Mon-Sun containing today)
-    const todayDate = new Date();
-    const dayOfWeek = todayDate.getDay(); // 0=Sun, 1=Mon
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    const weekMonday = new Date(todayDate);
-    weekMonday.setDate(todayDate.getDate() + mondayOffset);
-    const weekSunday = new Date(weekMonday);
-    weekSunday.setDate(weekMonday.getDate() + 6);
-    const weekStartStr = localDateStr(weekMonday);
-    const weekEndStr = localDateStr(weekSunday);
-
-    const shiftsThisWeek = (allShifts ?? []).filter(
-      (s) => s.date >= weekStartStr && s.date <= weekEndStr,
-    ).length;
+    // Shifts this week — reuse weekShifts already computed above
+    const shiftsThisWeek = weekShifts.length;
 
     // Monthly hours (current month)
-    const monthStartStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-01`;
-    const lastDayOfMonth = new Date(todayDate.getFullYear(), todayDate.getMonth() + 1, 0).getDate();
-    const monthEndStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
+    const monthStartStr = `${todayDate_w.getFullYear()}-${String(todayDate_w.getMonth() + 1).padStart(2, "0")}-01`;
+    const lastDayOfMonth = new Date(todayDate_w.getFullYear(), todayDate_w.getMonth() + 1, 0).getDate();
+    const monthEndStr = `${todayDate_w.getFullYear()}-${String(todayDate_w.getMonth() + 1).padStart(2, "0")}-${String(lastDayOfMonth).padStart(2, "0")}`;
 
     const monthlyHours = (allShifts ?? [])
       .filter((s) => s.date >= monthStartStr && s.date <= monthEndStr)
@@ -322,6 +326,7 @@ export const getManagerDashboardData = unstable_cache(
       groupColorMap,
       shiftDateMap,
       todayShifts,
+      weekShifts,
       userNameMap,
       today,
       shiftsThisWeek,

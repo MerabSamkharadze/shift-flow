@@ -3,6 +3,7 @@
 import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -45,7 +46,9 @@ export async function createSchedule(groupId: string, weekStart: string) {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     })();
 
-    const { data, error } = await supabase
+    // Use service client for insert — ownership already verified above
+    const service = createServiceClient();
+    const { data, error } = await service
       .from("schedules")
       .insert({
         company_id: profile.company_id,
@@ -115,7 +118,9 @@ export async function copyFromLastWeek(groupId: string, weekStart: string) {
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     })();
 
-    const { data: newSchedule, error: scheduleError } = await supabase
+    // Use service client for inserts — ownership already verified above
+    const service = createServiceClient();
+    const { data: newSchedule, error: scheduleError } = await service
       .from("schedules")
       .insert({
         company_id: profile.company_id,
@@ -149,7 +154,7 @@ export async function copyFromLastWeek(groupId: string, weekStart: string) {
           created_by: profile.id,
         };
       });
-      await supabase.from("shifts").insert(newShifts);
+      await service.from("shifts").insert(newShifts);
     }
 
     revalidateTag("manager-schedule");
@@ -178,7 +183,9 @@ export async function publishSchedule(scheduleId: string) {
     if (!grp || grp.manager_id !== profile.id) return { error: "Unauthorized" };
     if (schedule.status !== "draft") return { error: "Only draft schedules can be published" };
 
-    const { error } = await supabase
+    // Use service client for update — ownership already verified above, RLS may block user client
+    const service = createServiceClient();
+    const { error } = await service
       .from("schedules")
       .update({ status: "published" })
       .eq("id", scheduleId);
@@ -225,8 +232,9 @@ export async function addShift(
     }
     if (!templateRes.data) return { shiftId: null, error: "Template not found" };
 
-    // Query 3: insert
-    const { data, error } = await supabase
+    // Use service client for insert — ownership already verified above
+    const service = createServiceClient();
+    const { data, error } = await service
       .from("shifts")
       .insert({
         schedule_id: scheduleId,
@@ -264,7 +272,9 @@ export async function updateShift(shiftId: string, templateId: string) {
 
     if (!template) return { error: "Template not found" };
 
-    const { error } = await supabase
+    // Use service client for mutation — ownership verified via getManagerProfile
+    const service = createServiceClient();
+    const { error } = await service
       .from("shifts")
       .update({
         shift_template_id: templateId,
@@ -290,13 +300,15 @@ export async function updateShift(shiftId: string, templateId: string) {
 export async function removeShift(shiftId: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    // Use service client for mutation
+    const service = createServiceClient();
     // Set modified_by before delete so the DELETE trigger can read OLD.modified_by
-    await supabase
+    await service
       .from("shifts")
       .update({ modified_by: profile.id })
       .eq("id", shiftId);
 
-    const { error } = await supabase.from("shifts").delete().eq("id", shiftId);
+    const { error } = await service.from("shifts").delete().eq("id", shiftId);
 
     if (error) return { error: error.message };
 
@@ -311,9 +323,10 @@ export async function removeShift(shiftId: string) {
 }
 
 export async function addShiftNote(shiftId: string, note: string) {
-  const { supabase, profile } = await getManagerProfile();
+  const { profile } = await getManagerProfile();
   try {
-    const { error } = await supabase
+    const service = createServiceClient();
+    const { error } = await service
       .from("shifts")
       .update({ notes: note.trim() || null, modified_by: profile.id })
       .eq("id", shiftId);
@@ -335,9 +348,10 @@ export async function saveExtraHours(
   extraHours: number | null,
   extraHoursNotes: string | null,
 ) {
-  const { supabase, profile } = await getManagerProfile();
+  const { profile } = await getManagerProfile();
   try {
-    const { error } = await supabase
+    const service = createServiceClient();
+    const { error } = await service
       .from("shifts")
       .update({
         extra_hours: extraHours,

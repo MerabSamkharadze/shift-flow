@@ -1,9 +1,51 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import {
+  createSchedule,
+  copyFromLastWeek,
+  publishSchedule,
+  addShift,
+  updateShift,
+  removeShift,
+} from '@/app/actions/schedule';
 
-// Accept data prop from server but keep internal mock data as fallback
-// Full wiring to real schedule actions will be done incrementally
+// ─── Real data types ─────────────────────────────────────────────────────────
+
+type GroupRow = { id: string; name: string; color: string };
+type MemberRow = { id: string; firstName: string; lastName: string };
+type TemplateRow = {
+  id: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  color: string;
+};
+type ShiftRow = {
+  id: string;
+  userId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  templateId: string | null;
+  notes: string | null;
+  extraHours: number | null;
+  extraHoursNotes: string | null;
+};
+type ScheduleRow = { id: string; status: string };
+
+interface ScheduleBuilderData {
+  groups: GroupRow[];
+  members: MemberRow[];
+  templates: TemplateRow[];
+  schedule: ScheduleRow | null;
+  shifts: ShiftRow[];
+  prevScheduleExists: boolean;
+  selectedGroupId: string;
+  weekStart: string;
+}
+
 interface ScheduleBuilderProps {
   data?: unknown;
 }
@@ -13,6 +55,9 @@ interface ShiftData {
   type: 'morning' | 'evening' | 'night' | 'off';
   isGenerated?: boolean;
   isConfirmed?: boolean;
+  realShiftId?: string;
+  templateId?: string | null;
+  templateColor?: string;
 }
 
 interface SelectedCell {
@@ -58,7 +103,131 @@ interface Conflict {
   }>;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const EMPLOYEE_COLORS = [
+  'from-[#4ECBA0] to-[#3BA886]',
+  'from-[#F5A623] to-[#E09415]',
+  'from-[#E8604C] to-[#D14F38]',
+  'from-[#3B82F6] to-[#2563EB]',
+  'from-[#10B981] to-[#059669]',
+  'from-[#8B5CF6] to-[#7C3AED]',
+  'from-[#EC4899] to-[#DB2777]',
+  'from-[#F59E0B] to-[#D97706]',
+];
+
+function parseScheduleData(raw: unknown): ScheduleBuilderData | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  if (!Array.isArray(d.groups)) return null;
+  return {
+    groups: d.groups as GroupRow[],
+    members: (d.members ?? []) as MemberRow[],
+    templates: (d.templates ?? []) as TemplateRow[],
+    schedule: d.schedule as ScheduleRow | null,
+    shifts: (d.shifts ?? []) as ShiftRow[],
+    prevScheduleExists: !!d.prevScheduleExists,
+    selectedGroupId: (d.selectedGroupId ?? '') as string,
+    weekStart: (d.weekStart ?? '') as string,
+  };
+}
+
+function inferShiftType(startTime: string): 'morning' | 'evening' | 'night' {
+  const hour = parseInt(startTime?.split(':')[0] ?? '9', 10);
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'evening';
+  return 'night';
+}
+
+function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function buildDaysFromWeekStart(weekStart: string) {
+  const shortNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const fullNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const base = new Date(weekStart + 'T00:00:00');
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    const isoDate = localDateStr(d);
+    return {
+      short: shortNames[i],
+      date: d.getDate(),
+      full: `${fullNames[i]}, ${monthShort[d.getMonth()]} ${d.getDate()}`,
+      isoDate,
+    };
+  });
+}
+
+function buildScheduleFromShifts(
+  shifts: ShiftRow[],
+  members: MemberRow[],
+  days: { isoDate: string }[],
+  templates: TemplateRow[],
+): Record<string, Record<number, ShiftData | null>> {
+  const result: Record<string, Record<number, ShiftData | null>> = {};
+  members.forEach(m => { result[m.id] = {}; });
+  const dateToIndex: Record<string, number> = {};
+  days.forEach((d, i) => { dateToIndex[d.isoDate] = i; });
+  const templateMap: Record<string, TemplateRow> = {};
+  templates.forEach(t => { templateMap[t.id] = t; });
+
+  shifts.forEach(s => {
+    const dayIdx = dateToIndex[s.date];
+    if (dayIdx === undefined) return;
+    if (!result[s.userId]) return;
+    const tmpl = s.templateId ? templateMap[s.templateId] : null;
+    const shiftType = inferShiftType(s.startTime);
+    result[s.userId][dayIdx] = {
+      time: `${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)}`,
+      type: shiftType,
+      realShiftId: s.id,
+      templateId: s.templateId,
+      templateColor: tmpl?.color,
+    };
+  });
+
+  return result;
+}
+
+// ─── Mock fallbacks ──────────────────────────────────────────────────────────
+
+const MOCK_EMPLOYEES = [
+  { name: 'Ana Beridze', initial: 'AB', id: 'ana', color: 'from-[#4ECBA0] to-[#3BA886]' },
+  { name: 'Giorgi Maisuradze', initial: 'GM', id: 'giorgi', color: 'from-[#F5A623] to-[#E09415]' },
+  { name: 'Tamara Gelashvili', initial: 'TG', id: 'tamara', color: 'from-[#E8604C] to-[#D14F38]' },
+  { name: 'Luka Janelidze', initial: 'LJ', id: 'luka', color: 'from-[#3B82F6] to-[#2563EB]' },
+  { name: 'Nino Kharatishvili', initial: 'NK', id: 'nino', color: 'from-[#10B981] to-[#059669]' },
+];
+
+const MOCK_DAYS = [
+  { short: 'Mon', date: 15, full: 'Monday, Feb 15', isoDate: '2025-02-15' },
+  { short: 'Tue', date: 16, full: 'Tuesday, Feb 16', isoDate: '2025-02-16' },
+  { short: 'Wed', date: 17, full: 'Wednesday, Feb 17', isoDate: '2025-02-17' },
+  { short: 'Thu', date: 18, full: 'Thursday, Feb 18', isoDate: '2025-02-18' },
+  { short: 'Fri', date: 19, full: 'Friday, Feb 19', isoDate: '2025-02-19' },
+  { short: 'Sat', date: 20, full: 'Saturday, Feb 20', isoDate: '2025-02-20' },
+  { short: 'Sun', date: 21, full: 'Sunday, Feb 21', isoDate: '2025-02-21' },
+];
+
+const MOCK_SCHEDULE: Record<string, Record<number, ShiftData | null>> = {
+  ana: { 0: { time: '09:00-17:00', type: 'morning' }, 1: null, 2: { time: '17:00-01:00', type: 'night' }, 3: { time: '09:00-17:00', type: 'morning' }, 4: null, 5: { time: '08:00-16:00', type: 'morning' }, 6: { time: '', type: 'off' } },
+  giorgi: { 0: { time: '14:00-22:00', type: 'evening' }, 1: { time: '09:00-17:00', type: 'morning' }, 2: null, 3: { time: '10:00-18:00', type: 'morning' }, 4: { time: '14:00-22:00', type: 'evening' }, 5: null, 6: { time: '10:00-18:00', type: 'morning' } },
+  tamara: { 0: null, 1: { time: '08:00-16:00', type: 'morning' }, 2: { time: '09:00-17:00', type: 'morning' }, 3: null, 4: { time: '09:00-17:00', type: 'morning' }, 5: { time: '14:00-22:00', type: 'evening' }, 6: { time: '', type: 'off' } },
+  luka: { 0: null, 1: { time: '16:00-00:00', type: 'night' }, 2: { time: '14:00-22:00', type: 'evening' }, 3: { time: '16:00-00:00', type: 'night' }, 4: { time: '14:00-22:00', type: 'evening' }, 5: null, 6: { time: '09:00-17:00', type: 'morning' } },
+  nino: { 0: { time: '09:00-17:00', type: 'morning' }, 1: { time: '09:00-17:00', type: 'morning' }, 2: { time: '09:00-17:00', type: 'morning' }, 3: { time: '09:00-17:00', type: 'morning' }, 4: { time: '09:00-17:00', type: 'morning' }, 5: { time: '', type: 'off' }, 6: { time: '', type: 'off' } },
+};
+
 export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [isPending, startTransition] = useTransition();
+
+  // ─── Parse real data ───────────────────────────────────────────────────────
+  const realData = useMemo(() => parseScheduleData(data), [data]);
+
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [totalHours, setTotalHours] = useState(0);
@@ -104,23 +273,26 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     setTimeout(() => setShowToast(false), 3000);
   };
 
-  const employees = [
-    { name: 'Ana Beridze', initial: 'AB', id: 'ana', color: 'from-[#4ECBA0] to-[#3BA886]' },
-    { name: 'Giorgi Maisuradze', initial: 'GM', id: 'giorgi', color: 'from-[#F5A623] to-[#E09415]' },
-    { name: 'Tamara Gelashvili', initial: 'TG', id: 'tamara', color: 'from-[#E8604C] to-[#D14F38]' },
-    { name: 'Luka Janelidze', initial: 'LJ', id: 'luka', color: 'from-[#3B82F6] to-[#2563EB]' },
-    { name: 'Nino Kharatishvili', initial: 'NK', id: 'nino', color: 'from-[#10B981] to-[#059669]' }
-  ];
+  // ─── Template picker state for editor panels ─────────────────────────────
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  const days = [
-    { short: 'Mon', date: 15, full: 'Monday, Feb 15' },
-    { short: 'Tue', date: 16, full: 'Tuesday, Feb 16' },
-    { short: 'Wed', date: 17, full: 'Wednesday, Feb 17' },
-    { short: 'Thu', date: 18, full: 'Thursday, Feb 18' },
-    { short: 'Fri', date: 19, full: 'Friday, Feb 19' },
-    { short: 'Sat', date: 20, full: 'Saturday, Feb 20' },
-    { short: 'Sun', date: 21, full: 'Sunday, Feb 21' }
-  ];
+  const employees = useMemo(() => {
+    if (!realData || realData.members.length === 0) return MOCK_EMPLOYEES;
+    return realData.members.map((m, i) => {
+      const initials = `${m.firstName[0] ?? ''}${m.lastName[0] ?? ''}`.toUpperCase();
+      return {
+        name: `${m.firstName} ${m.lastName}`,
+        initial: initials,
+        id: m.id,
+        color: EMPLOYEE_COLORS[i % EMPLOYEE_COLORS.length],
+      };
+    });
+  }, [realData]);
+
+  const days = useMemo(() => {
+    if (!realData || !realData.weekStart) return MOCK_DAYS;
+    return buildDaysFromWeekStart(realData.weekStart);
+  }, [realData]);
 
   const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -258,58 +430,42 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     }
   };
 
-  const [schedule, setSchedule] = useState<Record<string, Record<number, ShiftData | null>>>({
-    ana: {
-      0: { time: '09:00-17:00', type: 'morning' },
-      1: null,
-      2: { time: '17:00-01:00', type: 'night' },
-      3: { time: '09:00-17:00', type: 'morning' },
-      4: null,
-      5: { time: '08:00-16:00', type: 'morning' },
-      6: { time: '', type: 'off' }
-    },
-    giorgi: {
-      0: { time: '14:00-22:00', type: 'evening' },
-      1: { time: '09:00-17:00', type: 'morning' },
-      2: null,
-      3: { time: '10:00-18:00', type: 'morning' },
-      4: { time: '14:00-22:00', type: 'evening' },
-      5: null,
-      6: { time: '10:00-18:00', type: 'morning' }
-    },
-    tamara: {
-      0: null,
-      1: { time: '08:00-16:00', type: 'morning' },
-      2: { time: '09:00-17:00', type: 'morning' },
-      3: null,
-      4: { time: '09:00-17:00', type: 'morning' },
-      5: { time: '14:00-22:00', type: 'evening' },
-      6: { time: '', type: 'off' }
-    },
-    luka: {
-      0: null,
-      1: { time: '16:00-00:00', type: 'night' },
-      2: { time: '14:00-22:00', type: 'evening' },
-      3: { time: '16:00-00:00', type: 'night' },
-      4: { time: '14:00-22:00', type: 'evening' },
-      5: null,
-      6: { time: '09:00-17:00', type: 'morning' }
-    },
-    nino: {
-      0: { time: '09:00-17:00', type: 'morning' },
-      1: { time: '09:00-17:00', type: 'morning' },
-      2: { time: '09:00-17:00', type: 'morning' },
-      3: { time: '09:00-17:00', type: 'morning' },
-      4: { time: '09:00-17:00', type: 'morning' },
-      5: { time: '', type: 'off' },
-      6: { time: '', type: 'off' }
-    }
-  });
+  const initialSchedule = useMemo(() => {
+    if (!realData || realData.members.length === 0) return MOCK_SCHEDULE;
+    return buildScheduleFromShifts(realData.shifts, realData.members, days, realData.templates);
+  }, [realData, days]);
+
+  const [schedule, setSchedule] = useState<Record<string, Record<number, ShiftData | null>>>(initialSchedule);
+
+  // Re-derive when data prop changes (group/week navigation)
+  useEffect(() => {
+    setSchedule(initialSchedule);
+  }, [initialSchedule]);
+
+  // Calculate real total hours from schedule state
+  const realTotalHours = useMemo(() => {
+    let total = 0;
+    Object.values(schedule).forEach(empSchedule => {
+      Object.values(empSchedule).forEach(shift => {
+        if (shift && shift.type !== 'off' && shift.time) {
+          const parts = shift.time.split('-');
+          if (parts.length === 2) {
+            const [sh, sm] = parts[0].split(':').map(Number);
+            const [eh, em] = parts[1].split(':').map(Number);
+            let hours = eh - sh;
+            if (hours < 0) hours += 24;
+            total += hours + (em - sm) / 60;
+          }
+        }
+      });
+    });
+    return Math.round(total);
+  }, [schedule]);
 
   // Count‑up animation for total hours (week view)
   useEffect(() => {
     if (viewMode !== 'week') return;
-    const target = 247;
+    const target = realTotalHours;
     const duration = 1000;
     const steps = 60;
     const increment = target / steps;
@@ -326,7 +482,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     }, duration / steps);
 
     return () => clearInterval(timer);
-  }, [viewMode]);
+  }, [viewMode, realTotalHours]);
 
   // Keyboard navigation for grid cells
   useEffect(() => {
@@ -479,8 +635,74 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     });
   };
 
+  // ─── Week navigation (real) ──────────────────────────────────────────────
+  const handlePrevWeek = () => {
+    if (realData?.weekStart) {
+      const d = new Date(realData.weekStart + 'T00:00:00');
+      d.setDate(d.getDate() - 7);
+      const newWeek = localDateStr(d);
+      const group = realData.selectedGroupId;
+      router.push(`/dashboard?view=schedule-builder&group=${group}&week=${newWeek}`);
+    } else {
+      setCurrentWeekOffset(prev => prev - 1);
+    }
+  };
+
+  const handleNextWeek = () => {
+    if (realData?.weekStart) {
+      const d = new Date(realData.weekStart + 'T00:00:00');
+      d.setDate(d.getDate() + 7);
+      const newWeek = localDateStr(d);
+      const group = realData.selectedGroupId;
+      router.push(`/dashboard?view=schedule-builder&group=${group}&week=${newWeek}`);
+    } else {
+      setCurrentWeekOffset(prev => prev + 1);
+    }
+  };
+
+  const handleGroupChange = (groupId: string) => {
+    if (realData) {
+      const week = realData.weekStart;
+      router.push(`/dashboard?view=schedule-builder&group=${groupId}&week=${week}`);
+    }
+  };
+
+  // Handle create schedule
+  const handleCreateSchedule = () => {
+    if (!realData?.selectedGroupId || !realData?.weekStart) return;
+    startTransition(async () => {
+      const result = await createSchedule(realData.selectedGroupId, realData.weekStart);
+      if (result.error) {
+        showToastMessage(`Error: ${result.error}`);
+      } else {
+        showToastMessage('Schedule created!');
+        router.refresh();
+      }
+    });
+  };
+
+  // Handle copy from last week
+  const handleCopyFromLastWeek = () => {
+    if (!realData?.selectedGroupId || !realData?.weekStart) return;
+    startTransition(async () => {
+      const result = await copyFromLastWeek(realData.selectedGroupId, realData.weekStart);
+      if (result.error) {
+        showToastMessage(`Error: ${result.error}`);
+      } else {
+        showToastMessage('Copied from last week!');
+        router.refresh();
+      }
+    });
+  };
+
+  // Whether schedule is read-only
+  const isReadOnly = realData?.schedule ? realData.schedule.status !== 'draft' : false;
+
   // Get shift color
-  const getShiftColor = (type: string) => {
+  const getShiftColor = (type: string, templateColor?: string) => {
+    if (templateColor) {
+      return { bg: templateColor, text: '#0A1628' };
+    }
     switch (type) {
       case 'morning':
         return { bg: '#4ECBA0', text: '#0A1628' };
@@ -497,11 +719,26 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
 
   // Handle publish
   const handlePublish = () => {
-    showToastMessage('Schedule published! Employees notified.');
+    if (realData?.schedule?.id && realData.schedule.status === 'draft') {
+      startTransition(async () => {
+        const result = await publishSchedule(realData.schedule!.id);
+        if (result.error) {
+          showToastMessage(`Error: ${result.error}`);
+        } else {
+          showToastMessage('Schedule published! Employees notified.');
+          router.refresh();
+        }
+      });
+    } else {
+      showToastMessage('Schedule published! Employees notified.');
+    }
   };
 
   // Handle cell click
   const handleCellClick = (employeeId: string, dayIndex: number) => {
+    if (isReadOnly) return; // Don't allow edits on published/locked schedules
+    const existingShift = schedule[employeeId]?.[dayIndex];
+    setSelectedTemplateId(existingShift?.templateId ?? realData?.templates[0]?.id ?? null);
     setSelectedCell({
       employee: employeeId,
       day: days[dayIndex].full,
@@ -509,20 +746,83 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     });
   };
 
-  // Handle save shift
+  // Handle save shift (add or update)
   const handleSaveShift = () => {
+    if (!selectedCell || !realData?.schedule?.id) {
+      setSelectedCell(null);
+      return;
+    }
+    const existingShift = schedule[selectedCell.employee]?.[selectedCell.dayIndex];
+    const templateToUse = selectedTemplateId ?? realData.templates[0]?.id;
+    if (!templateToUse) {
+      showToastMessage('No shift template available');
+      setSelectedCell(null);
+      return;
+    }
+
+    if (existingShift?.realShiftId) {
+      // Update existing shift
+      startTransition(async () => {
+        const result = await updateShift(existingShift.realShiftId!, templateToUse);
+        if (result.error) {
+          showToastMessage(`Error: ${result.error}`);
+        } else {
+          showToastMessage('Shift updated!');
+          router.refresh();
+        }
+      });
+    } else {
+      // Add new shift
+      const date = days[selectedCell.dayIndex]?.isoDate;
+      if (!date) { setSelectedCell(null); return; }
+      startTransition(async () => {
+        const result = await addShift(realData.schedule!.id, selectedCell.employee, date, templateToUse);
+        if (result.error) {
+          showToastMessage(`Error: ${result.error}`);
+        } else {
+          showToastMessage('Shift added!');
+          router.refresh();
+        }
+      });
+    }
     setSelectedCell(null);
+    setSelectedTemplateId(null);
   };
 
   // Handle delete shift
   const handleDeleteShift = () => {
-    if (selectedCell) {
+    if (!selectedCell) return;
+    const existingShift = schedule[selectedCell.employee]?.[selectedCell.dayIndex];
+
+    if (existingShift?.realShiftId) {
+      // Remove via server action
+      const shiftId = existingShift.realShiftId;
+      // Optimistic update
       setSchedule(prev => ({
         ...prev,
         [selectedCell.employee]: {
           ...prev[selectedCell.employee],
-          [selectedCell.dayIndex]: null
+          [selectedCell.dayIndex]: null,
+        },
+      }));
+      setSelectedCell(null);
+      startTransition(async () => {
+        const result = await removeShift(shiftId);
+        if (result.error) {
+          showToastMessage(`Error: ${result.error}`);
+        } else {
+          showToastMessage('Shift removed!');
         }
+        router.refresh();
+      });
+    } else {
+      // Local-only (mock or generated) shift
+      setSchedule(prev => ({
+        ...prev,
+        [selectedCell.employee]: {
+          ...prev[selectedCell.employee],
+          [selectedCell.dayIndex]: null,
+        },
       }));
       setSelectedCell(null);
     }
@@ -532,6 +832,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
   // Drag & Drop Handlers
   // -----------------------------------------------------------------
   const handleDragStart = (e: React.DragEvent, employeeId: string, dayIndex: number, shift: ShiftData) => {
+    if (isReadOnly) { e.preventDefault(); return; }
     setDraggedShift({ employeeId, dayIndex, shift });
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -565,7 +866,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
       return;
     }
 
-    const targetShift = schedule[targetEmployeeId][targetDayIndex];
+    const targetShift = schedule[targetEmployeeId]?.[targetDayIndex];
 
     // Check if dropping on a day off
     if (targetShift?.type === 'off') {
@@ -596,6 +897,19 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
       newSchedule[sourceEmployeeId][sourceDayIndex] = null;
       setSchedule(newSchedule);
       showToastMessage('Shift moved successfully.');
+
+      // Server-side: remove old + add new
+      if (sourceShift.realShiftId && realData?.schedule?.id) {
+        const targetDate = days[targetDayIndex]?.isoDate;
+        const templateToUse = sourceShift.templateId ?? realData.templates[0]?.id;
+        if (targetDate && templateToUse) {
+          startTransition(async () => {
+            await removeShift(sourceShift.realShiftId!);
+            await addShift(realData.schedule!.id, targetEmployeeId, targetDate, templateToUse);
+            router.refresh();
+          });
+        }
+      }
     }
 
     setDraggedShift(null);
@@ -619,7 +933,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     if (!draggedShift) return false;
     
     // Check if employee already has a shift on this day
-    const existingShift = schedule[employeeId][dayIndex];
+    const existingShift = schedule[employeeId]?.[dayIndex];
     if (existingShift && existingShift.type !== 'off') {
       return true;
     }
@@ -692,7 +1006,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
             </label>
             <div className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
               <i className="ri-calendar-line text-[#F5A623]"></i>
-              <span className="text-sm text-[#F0EDE8]">Feb 15 - Feb 21, 2025</span>
+              <span className="text-sm text-[#F0EDE8]">{days[0]?.full.split(', ')[1] ?? 'Feb 15'} - {days[6]?.full.split(', ')[1] ?? 'Feb 21'}</span>
             </div>
           </div>
 
@@ -946,7 +1260,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     let conflictId = 0;
 
     employees.forEach(emp => {
-      const empSchedule = schedule[emp.id];
+      const empSchedule = schedule[emp.id] ?? {};
       let totalHours = 0;
       const doubleBookedDays: number[] = [];
       const restViolationDays: number[] = [];
@@ -1354,17 +1668,19 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-center gap-4 mb-6">
         <button
-          onClick={() => setCurrentWeekOffset(prev => prev - 1)}
+          onClick={handlePrevWeek}
           className="w-10 h-10 flex items-center justify-center text-[#F0EDE8] hover:bg-[#142236] rounded-lg transition-colors"
         >
           <i className="ri-arrow-left-line text-xl"></i>
         </button>
         <div className="text-center">
-          <div className="text-lg font-['Syne'] font-semibold text-[#F0EDE8]">Feb 15–21</div>
+          <div className="text-lg font-['Syne'] font-semibold text-[#F0EDE8]">
+            {days[0] && days[6] ? `${days[0].full.split(', ')[1]} – ${days[6].full.split(', ')[1]}` : 'Week View'}
+          </div>
           <div className="text-xs text-[#7A94AD]">Week View</div>
         </div>
         <button
-          onClick={() => setCurrentWeekOffset(prev => prev + 1)}
+          onClick={handleNextWeek}
           className="w-10 h-10 flex items-center justify-center text-[#F0EDE8] hover:bg-[#142236] rounded-lg transition-colors"
         >
           <i className="ri-arrow-right-line text-xl"></i>
@@ -1372,7 +1688,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
       </div>
 
       {days.map((day, dayIndex) => {
-        const workingEmployees = employees.filter(emp => schedule[emp.id][dayIndex]);
+        const workingEmployees = employees.filter(emp => schedule[emp.id]?.[dayIndex]);
 
         return (
           <div key={dayIndex} className="bg-[#142236] border border-white/[0.07] rounded-xl overflow-hidden">
@@ -1394,9 +1710,9 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
             <div className="p-4 space-y-3">
               {workingEmployees.length > 0 ? (
                 workingEmployees.map(emp => {
-                  const shift = schedule[emp.id][dayIndex];
+                  const shift = schedule[emp.id]?.[dayIndex];
                   if (!shift) return null;
-                  const colors = getShiftColor(shift.type);
+                  const colors = getShiftColor(shift.type, shift.templateColor);
 
                   return (
                     <div
@@ -1475,7 +1791,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
               const dayShifts = getMonthDayShifts(day);
               const activeShifts = dayShifts.filter(s => s.shift.type !== 'off');
               const isSelected = selectedMonthDay === day;
-              const isToday = day === 15 && currentMonth === 1 && currentYear === 2025;
+              const isToday = (() => { const now = new Date(); return day === now.getDate() && currentMonth === now.getMonth() && currentYear === now.getFullYear(); })();
               return (
                 <button
                   key={di}
@@ -1529,7 +1845,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
           </div>
           <div className="p-4 space-y-3">
             {getMonthDayShifts(selectedMonthDay).map(({ employee: emp, shift }) => {
-              const colors = getShiftColor(shift.type);
+              const colors = getShiftColor(shift.type, shift.templateColor);
               return (
                 <div key={emp.id} className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
                   <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${emp.color} flex items-center justify-center text-white text-sm font-semibold flex-shrink-0`}>
@@ -1589,7 +1905,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
                 const dayShifts = getMonthDayShifts(day);
                 const activeShifts = dayShifts.filter(s => s.shift.type !== 'off');
                 const isSelected = selectedMonthDay === day;
-                const isToday = day === 15 && currentMonth === 1 && currentYear === 2025;
+                const isToday = (() => { const now = new Date(); return day === now.getDate() && currentMonth === now.getMonth() && currentYear === now.getFullYear(); })();
                 const isWeekend = di >= 5;
 
                 return (
@@ -1621,7 +1937,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
                     {/* Shift Indicators */}
                     <div className="space-y-0.5 md:space-y-1">
                       {activeShifts.slice(0, 3).map((s, si) => {
-                        const colors = getShiftColor(s.shift.type);
+                        const colors = getShiftColor(s.shift.type, s.shift.templateColor);
                         return (
                           <div
                             key={si}
@@ -1702,7 +2018,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
             {/* Employee List */}
             <div className="space-y-2 max-h-[400px] overflow-y-auto">
               {activeShifts.map(({ employee: emp, shift }) => {
-                const colors = getShiftColor(shift.type);
+                const colors = getShiftColor(shift.type, shift.templateColor);
                 return (
                   <div key={emp.id} className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg hover:bg-[#1A2E45] transition-colors">
                     <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${emp.color} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>
@@ -1780,7 +2096,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
 
               <div className="space-y-2">
                 {activeShifts.map(({ employee: emp, shift }) => {
-                  const colors = getShiftColor(shift.type);
+                  const colors = getShiftColor(shift.type, shift.templateColor);
                   return (
                     <div key={emp.id} className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
                       <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${emp.color} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>
@@ -1855,8 +2171,8 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
                       </div>
                     </td>
                     {days.map((day, dayIndex) => {
-                      const shift = schedule[employee.id][dayIndex];
-                      const colors = shift ? getShiftColor(shift.type) : null;
+                      const shift = schedule[employee.id]?.[dayIndex];
+                      const colors = shift ? getShiftColor(shift.type, shift.templateColor) : null;
                       const isGenerated = shift?.isGenerated && !shift?.isConfirmed;
                       const isDragOver = dragOverCell?.employeeId === employee.id && dragOverCell?.dayIndex === dayIndex;
                       const isValidDrop = isDragOver && isValidDropTarget(employee.id, dayIndex);
@@ -1989,59 +2305,51 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Start Time</label>
-              <input
-                type="time"
-                defaultValue="09:00"
-                className="w-full px-3 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">End Time</label>
-              <input
-                type="time"
-                defaultValue="17:00"
-                className="w-full px-3 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-              />
-            </div>
-          </div>
-
           <div>
-            <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Type</label>
-            <select className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
-              <option>Morning (08:00-16:00)</option>
-              <option>Evening (14:00-22:00)</option>
-              <option>Night (16:00-00:00)</option>
-              <option>Day Off</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-[#7A94AD] mb-2">Notes</label>
-            <textarea
-              rows={3}
-              placeholder="Add any notes about this shift..."
-              className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm resize-none"
-            ></textarea>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 bg-[#E8604C]/10 border border-[#E8604C]/20 rounded-lg">
-            <i className="ri-alert-line text-[#E8604C] text-sm md:text-base"></i>
-            <span className="text-[10px] md:text-xs text-[#E8604C]">Overlapping shift detected</span>
+            <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Template</label>
+            {realData && realData.templates.length > 0 ? (
+              <div className="space-y-1.5">
+                {realData.templates.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setSelectedTemplateId(t.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all cursor-pointer text-left ${
+                      selectedTemplateId === t.id
+                        ? 'border-[#F5A623] bg-[#F5A623]/10'
+                        : 'border-white/[0.07] bg-[#0A1628] hover:border-white/[0.15]'
+                    }`}
+                  >
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }}></div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-[#F0EDE8]">{t.name}</div>
+                      <div className="text-xs text-[#7A94AD] font-['JetBrains_Mono']">{t.startTime.slice(0,5)} - {t.endTime.slice(0,5)}</div>
+                    </div>
+                    {selectedTemplateId === t.id && <i className="ri-checkbox-circle-fill text-[#F5A623]"></i>}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <select className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
+                <option>Morning (08:00-16:00)</option>
+                <option>Evening (14:00-22:00)</option>
+                <option>Night (16:00-00:00)</option>
+                <option>Day Off</option>
+              </select>
+            )}
           </div>
 
           <div className="flex gap-3 pt-2">
             <button
               onClick={handleSaveShift}
-              className="flex-1 px-4 py-2.5 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+              disabled={isPending || isReadOnly}
+              className="flex-1 px-4 py-2.5 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
             >
-              <i className="ri-save-line mr-2"></i>Save
+              <i className="ri-save-line mr-2"></i>{isPending ? 'Saving...' : 'Save'}
             </button>
             <button
               onClick={handleDeleteShift}
-              className="px-4 py-2.5 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer"
+              disabled={isPending || isReadOnly}
+              className="px-4 py-2.5 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50"
               aria-label="Delete shift"
             >
               <i className="ri-delete-bin-line"></i>
@@ -2127,59 +2435,51 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-2 md:gap-3">
-          <div>
-            <label className="block text-sm font-medium text-[#7A94AD] mb-2">Start Time</label>
-            <input
-              type="time"
-              defaultValue="09:00"
-              className="w-full px-2 md:px-3 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-xs md:text-sm font-['JetBrains_Mono']"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-[#7A94AD] mb-2">End Time</label>
-            <input
-              type="time"
-              defaultValue="17:00"
-              className="w-full px-2 md:px-3 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-xs md:text-sm font-['JetBrains_Mono']"
-            />
-          </div>
-        </div>
-
         <div>
-          <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Type</label>
-          <select className="w-full px-3 md:px-4 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
-            <option>Morning (08:00-16:00)</option>
-            <option>Evening (14:00-22:00)</option>
-            <option>Night (16:00-00:00)</option>
-            <option>Day Off</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-[#7A94AD] mb-2">Notes</label>
-          <textarea
-            rows={3}
-            placeholder="Add any notes about this shift..."
-            className="w-full px-3 md:px-4 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm resize-none"
-          ></textarea>
-        </div>
-
-        <div className="flex items-center gap-2 p-2 bg-[#E8604C]/10 border border-[#E8604C]/20 rounded-lg">
-          <i className="ri-alert-line text-[#E8604C] text-sm"></i>
-          <span className="text-[10px] text-[#E8604C]">Overlapping shift detected</span>
+          <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Template</label>
+          {realData && realData.templates.length > 0 ? (
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+              {realData.templates.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => setSelectedTemplateId(t.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all cursor-pointer text-left ${
+                    selectedTemplateId === t.id
+                      ? 'border-[#F5A623] bg-[#F5A623]/10'
+                      : 'border-white/[0.07] bg-[#0A1628] hover:border-white/[0.15]'
+                  }`}
+                >
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }}></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-[#F0EDE8]">{t.name}</div>
+                    <div className="text-xs text-[#7A94AD] font-['JetBrains_Mono']">{t.startTime.slice(0,5)} - {t.endTime.slice(0,5)}</div>
+                  </div>
+                  {selectedTemplateId === t.id && <i className="ri-checkbox-circle-fill text-[#F5A623]"></i>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <select className="w-full px-3 md:px-4 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
+              <option>Morning (08:00-16:00)</option>
+              <option>Evening (14:00-22:00)</option>
+              <option>Night (16:00-00:00)</option>
+              <option>Day Off</option>
+            </select>
+          )}
         </div>
 
         <div className="flex gap-2 pt-2">
           <button
             onClick={handleSaveShift}
-            className="flex-1 px-3 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+            disabled={isPending || isReadOnly}
+            className="flex-1 px-3 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
           >
-            <i className="ri-save-line mr-1"></i>Save
+            <i className="ri-save-line mr-1"></i>{isPending ? 'Saving...' : 'Save'}
           </button>
           <button
             onClick={handleDeleteShift}
-            className="px-3 py-2 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer"
+            disabled={isPending || isReadOnly}
+            className="px-3 py-2 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50"
             aria-label="Delete shift"
           >
             <i className="ri-delete-bin-line"></i>
@@ -2243,7 +2543,7 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
         >
           <i className="ri-checkbox-circle-fill text-xl"></i>
           <span style={{ fontFamily: 'DM Sans, sans-serif' }}>
-            Schedule published! Employees notified.
+            {toastMessage}
           </span>
         </div>
       )}
@@ -2283,23 +2583,37 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
             </div>
 
             <button
-              onClick={() => viewMode === 'month' ? handlePrevMonth() : setCurrentWeekOffset(prev => prev - 1)}
+              onClick={() => viewMode === 'month' ? handlePrevMonth() : handlePrevWeek()}
               className="hidden md:flex items-center justify-center px-3 md:px-4 py-2 bg-[#142236] border border-white/[0.07] text-[#F0EDE8] rounded-lg hover:bg-[#1A2E45] transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer"
+              disabled={isPending}
             >
               <i className="ri-arrow-left-line mr-1 md:mr-2"></i>Prev
             </button>
 
             <button
-              onClick={() => viewMode === 'month' ? handleNextMonth() : setCurrentWeekOffset(prev => prev + 1)}
+              onClick={() => viewMode === 'month' ? handleNextMonth() : handleNextWeek()}
               className="hidden md:flex items-center justify-center px-3 md:px-4 py-2 bg-[#142236] border border-white/[0.07] text-[#F0EDE8] rounded-lg hover:bg-[#1A2E45] transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer"
+              disabled={isPending}
             >
               Next<i className="ri-arrow-right-line ml-1 md:ml-2"></i>
             </button>
 
-            <select className="px-3 md:px-4 py-2 md:py-2.5 bg-[#142236] border border-white/[0.07] text-[#F0EDE8] rounded-lg hover:bg-[#1A2E45] transition-colors cursor-pointer text-xs md:text-sm col-span-2 sm:col-span-1">
-              <option>All Employees</option>
-              <option>Downtown Branch</option>
-              <option>Westside Branch</option>
+            <select
+              value={realData?.selectedGroupId ?? ''}
+              onChange={(e) => handleGroupChange(e.target.value)}
+              className="px-3 md:px-4 py-2 md:py-2.5 bg-[#142236] border border-white/[0.07] text-[#F0EDE8] rounded-lg hover:bg-[#1A2E45] transition-colors cursor-pointer text-xs md:text-sm col-span-2 sm:col-span-1"
+            >
+              {realData && realData.groups.length > 0 ? (
+                realData.groups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))
+              ) : (
+                <>
+                  <option>All Employees</option>
+                  <option>Downtown Branch</option>
+                  <option>Westside Branch</option>
+                </>
+              )}
             </select>
 
             {viewMode === 'week' && (
@@ -2335,23 +2649,93 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
               </>
             )}
 
-            <button className="hidden md:flex items-center justify-center px-3 md:px-4 py-2 bg-[#142236] border border-[#F5A623] text-[#F5A623] rounded-lg hover:bg-[#F5A623]/10 transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer">
-              <i className="ri-save-line mr-1 md:mr-2"></i>
-              <span className="hidden sm:inline">Save Template</span>
-              <span className="sm:hidden">Save</span>
-            </button>
+            {/* Schedule status badge */}
+            {realData?.schedule && (
+              <span className={`hidden md:inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                realData.schedule.status === 'draft'
+                  ? 'bg-[#F5A623]/15 text-[#F5A623]'
+                  : realData.schedule.status === 'published'
+                  ? 'bg-[#4ECBA0]/15 text-[#4ECBA0]'
+                  : 'bg-[#7A94AD]/15 text-[#7A94AD]'
+              }`}>
+                {realData.schedule.status === 'draft' && <i className="ri-draft-line mr-1"></i>}
+                {realData.schedule.status === 'published' && <i className="ri-checkbox-circle-line mr-1"></i>}
+                {realData.schedule.status.charAt(0).toUpperCase() + realData.schedule.status.slice(1)}
+              </span>
+            )}
 
-            <button
-              onClick={handlePublish}
-              className="hidden md:flex items-center justify-center px-4 md:px-6 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer"
-            >
-              <i className={`ri-send-plane-fill ${isPublishing ? 'animate-spin' : ''}`}></i>
-              <span className="hidden sm:inline">Publish Schedule</span>
-              <span className="sm:hidden">Publish</span>
-            </button>
+            {/* Create schedule / copy from last week */}
+            {realData && !realData.schedule && (
+              <>
+                <button
+                  onClick={handleCreateSchedule}
+                  disabled={isPending}
+                  className="hidden md:flex items-center justify-center px-3 md:px-4 py-2 bg-[#4ECBA0] hover:bg-[#3BA886] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer disabled:opacity-50"
+                >
+                  <i className="ri-add-line mr-1 md:mr-2"></i>Create Schedule
+                </button>
+                {realData.prevScheduleExists && (
+                  <button
+                    onClick={handleCopyFromLastWeek}
+                    disabled={isPending}
+                    className="hidden md:flex items-center justify-center px-3 md:px-4 py-2 bg-[#142236] border border-[#F5A623] text-[#F5A623] rounded-lg hover:bg-[#F5A623]/10 transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <i className="ri-file-copy-line mr-1 md:mr-2"></i>Copy Last Week
+                  </button>
+                )}
+              </>
+            )}
+
+            {(!realData || (realData.schedule?.status === 'draft')) && (
+              <button
+                onClick={handlePublish}
+                disabled={isPending || !realData?.schedule}
+                className="hidden md:flex items-center justify-center px-4 md:px-6 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap text-xs md:text-sm cursor-pointer disabled:opacity-50"
+              >
+                <i className={`ri-send-plane-fill ${isPending ? 'animate-spin' : ''}`}></i>
+                <span className="hidden sm:inline ml-1">Publish Schedule</span>
+                <span className="sm:hidden ml-1">Publish</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* No schedule banner */}
+      {realData && !realData.schedule && realData.members.length > 0 && viewMode === 'week' && (
+        <div className="bg-[#142236] border border-[#F5A623]/30 rounded-xl p-6 text-center">
+          <i className="ri-calendar-todo-line text-4xl text-[#F5A623] mb-3"></i>
+          <h3 className="text-lg font-['Syne'] font-semibold text-[#F0EDE8] mb-1">No schedule for this week</h3>
+          <p className="text-sm text-[#7A94AD] mb-4">Create a new schedule to start assigning shifts.</p>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={handleCreateSchedule}
+              disabled={isPending}
+              className="px-5 py-2.5 bg-[#4ECBA0] hover:bg-[#3BA886] text-[#0A1628] font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <i className="ri-add-line mr-2"></i>Create Schedule
+            </button>
+            {realData.prevScheduleExists && (
+              <button
+                onClick={handleCopyFromLastWeek}
+                disabled={isPending}
+                className="px-5 py-2.5 bg-[#142236] border border-[#F5A623] text-[#F5A623] rounded-lg hover:bg-[#F5A623]/10 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <i className="ri-file-copy-line mr-2"></i>Copy from Last Week
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* No groups banner */}
+      {realData && realData.groups.length === 0 && (
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-6 text-center">
+          <i className="ri-team-line text-4xl text-[#7A94AD] mb-3"></i>
+          <h3 className="text-lg font-['Syne'] font-semibold text-[#F0EDE8] mb-1">No groups yet</h3>
+          <p className="text-sm text-[#7A94AD]">Create a group and add members to start building schedules.</p>
+        </div>
+      )}
 
       {/* Main Content */}
       {renderMainContent()}
@@ -2430,59 +2814,51 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-[#7A94AD] mb-2">Start Time</label>
-                <input
-                  type="time"
-                  defaultValue="09:00"
-                  className="w-full px-3 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#7A94AD] mb-2">End Time</label>
-                <input
-                  type="time"
-                  defaultValue="17:00"
-                  className="w-full px-3 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Type</label>
-              <select className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
-                <option>Morning (08:00-16:00)</option>
-                <option>Evening (14:00-22:00)</option>
-                <option>Night (16:00-00:00)</option>
-                <option>Day Off</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Notes</label>
-              <textarea
-                rows={3}
-                placeholder="Add any notes about this shift..."
-                className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm resize-none"
-              ></textarea>
-            </div>
-
-            <div className="flex items-center gap-2 p-3 bg-[#E8604C]/10 border border-[#E8604C]/20 rounded-lg">
-              <i className="ri-alert-line text-[#E8604C] text-sm md:text-base"></i>
-              <span className="text-[10px] md:text-xs text-[#E8604C]">Overlapping shift detected</span>
+              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Template</label>
+              {realData && realData.templates.length > 0 ? (
+                <div className="space-y-1.5">
+                  {realData.templates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTemplateId(t.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all cursor-pointer text-left ${
+                        selectedTemplateId === t.id
+                          ? 'border-[#F5A623] bg-[#F5A623]/10'
+                          : 'border-white/[0.07] bg-[#0A1628] hover:border-white/[0.15]'
+                      }`}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }}></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-[#F0EDE8]">{t.name}</div>
+                        <div className="text-xs text-[#7A94AD] font-['JetBrains_Mono']">{t.startTime.slice(0,5)} - {t.endTime.slice(0,5)}</div>
+                      </div>
+                      {selectedTemplateId === t.id && <i className="ri-checkbox-circle-fill text-[#F5A623]"></i>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <select className="w-full px-4 py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
+                  <option>Morning (08:00-16:00)</option>
+                  <option>Evening (14:00-22:00)</option>
+                  <option>Night (16:00-00:00)</option>
+                  <option>Day Off</option>
+                </select>
+              )}
             </div>
 
             <div className="flex gap-3 pt-2">
               <button
                 onClick={handleSaveShift}
-                className="flex-1 px-4 py-2.5 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                disabled={isPending || isReadOnly}
+                className="flex-1 px-4 py-2.5 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
-                <i className="ri-save-line mr-2"></i>Save
+                <i className="ri-save-line mr-2"></i>{isPending ? 'Saving...' : 'Save'}
               </button>
               <button
                 onClick={handleDeleteShift}
-                className="px-4 py-2.5 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer"
+                disabled={isPending || isReadOnly}
+                className="px-4 py-2.5 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 aria-label="Delete shift"
               >
                 <i className="ri-delete-bin-line"></i>
@@ -2551,59 +2927,51 @@ export default function ScheduleBuilder({ data }: ScheduleBuilderProps) {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-[#7A94AD] mb-2">Start Time</label>
-                <input
-                  type="time"
-                  defaultValue="09:00"
-                  className="w-full px-2 py-2 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[#7A94AD] mb-2">End Time</label>
-                <input
-                  type="time"
-                  defaultValue="17:00"
-                  className="w-full px-2 py-2 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm font-['JetBrains_Mono']"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Type</label>
-              <select className="w-full px-3 py-2 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
-                <option>Morning (08:00-16:00)</option>
-                <option>Evening (14:00-22:00)</option>
-                <option>Night (16:00-00:00)</option>
-                <option>Day Off</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Notes</label>
-              <textarea
-                rows={3}
-                placeholder="Add any notes about this shift..."
-                className="w-full px-3 py-2 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm resize-none"
-              ></textarea>
-            </div>
-
-            <div className="flex items-center gap-2 p-2 bg-[#E8604C]/10 border border-[#E8604C]/20 rounded-lg">
-              <i className="ri-alert-line text-[#E8604C] text-sm"></i>
-              <span className="text-[10px] text-[#E8604C]">Overlapping shift detected</span>
+              <label className="block text-sm font-medium text-[#7A94AD] mb-2">Shift Template</label>
+              {realData && realData.templates.length > 0 ? (
+                <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+                  {realData.templates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTemplateId(t.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg border transition-all cursor-pointer text-left ${
+                        selectedTemplateId === t.id
+                          ? 'border-[#F5A623] bg-[#F5A623]/10'
+                          : 'border-white/[0.07] bg-[#0A1628] hover:border-white/[0.15]'
+                      }`}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: t.color }}></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-[#F0EDE8]">{t.name}</div>
+                        <div className="text-xs text-[#7A94AD] font-['JetBrains_Mono']">{t.startTime.slice(0,5)} - {t.endTime.slice(0,5)}</div>
+                      </div>
+                      {selectedTemplateId === t.id && <i className="ri-checkbox-circle-fill text-[#F5A623]"></i>}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <select className="w-full px-3 py-2 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm cursor-pointer">
+                  <option>Morning (08:00-16:00)</option>
+                  <option>Evening (14:00-22:00)</option>
+                  <option>Night (16:00-00:00)</option>
+                  <option>Day Off</option>
+                </select>
+              )}
             </div>
 
             <div className="flex gap-2 pt-2">
               <button
                 onClick={handleSaveShift}
-                className="flex-1 px-3 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                disabled={isPending || isReadOnly}
+                className="flex-1 px-3 py-2 bg-[#F5A623] hover:bg-[#E09415] text-[#0A1628] font-medium rounded-lg transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
               >
-                <i className="ri-save-line mr-1"></i>Save
+                <i className="ri-save-line mr-1"></i>{isPending ? 'Saving...' : 'Save'}
               </button>
               <button
                 onClick={handleDeleteShift}
-                className="px-3 py-2 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer"
+                disabled={isPending || isReadOnly}
+                className="px-3 py-2 bg-[#E8604C]/10 hover:bg-[#E8604C]/20 text-[#E8604C] font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 aria-label="Delete shift"
               >
                 <i className="ri-delete-bin-line"></i>

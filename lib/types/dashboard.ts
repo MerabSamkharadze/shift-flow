@@ -38,6 +38,14 @@ export type DashboardViewData = {
     end_time: string
     assigned_to: string | null
   }[]
+  weekShifts: {
+    id: string
+    schedule_id: string
+    date: string
+    start_time: string
+    end_time: string
+    assigned_to: string | null
+  }[]
   userNameMap: Record<string, string>
   today: string
   shiftsThisWeek: number

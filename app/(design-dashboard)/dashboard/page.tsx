@@ -54,9 +54,10 @@ async function fetchViewData(
       const selectedGroupId = searchParams.group ?? groups[0]?.id ?? "";
       const weekStart = searchParams.week ?? getCurrentWeekStart();
       if (selectedGroupId) {
-        return getScheduleData(profile.id, selectedGroupId, weekStart);
+        const scheduleData = await getScheduleData(profile.id, selectedGroupId, weekStart);
+        return { ...scheduleData, selectedGroupId, weekStart };
       }
-      return { groups: [], members: [], templates: [], schedule: null, shifts: [], prevScheduleExists: false };
+      return { groups: [], members: [], templates: [], schedule: null, shifts: [], prevScheduleExists: false, selectedGroupId: "", weekStart };
     }
     case "shift-templates": {
       const groupsData = await getManagerGroupsData(profile.id);

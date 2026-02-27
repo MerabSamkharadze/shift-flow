@@ -46,8 +46,9 @@ export default function DashboardView({ data }: DashboardViewProps) {
     animateCount(setHoursThisMonth, targetHours);
   }, [targetEmployees, targetShifts, targetPending, targetHours]);
 
-  // Build week schedule from real today's shifts
+  // Build week schedule from real week shifts
   const todayShifts = d?.todayShifts ?? [];
+  const weekShifts = d?.weekShifts ?? [];
   const userNameMap = d?.userNameMap ?? {};
   const scheduleGroupMap = d?.scheduleGroupMap ?? {};
   const groupColorMap = d?.groupColorMap ?? {};
@@ -66,23 +67,21 @@ export default function DashboardView({ data }: DashboardViewProps) {
     const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
     const isToday = dateStr === d?.today;
 
-    // Filter today's shifts won't work here - we only have today's shifts from server
-    // For the week view, show today's shifts on the correct day
-    const shifts = dateStr === d?.today
-      ? todayShifts.map((s) => {
-          const name = s.assigned_to ? (userNameMap[s.assigned_to] ?? 'Unknown') : 'Unassigned';
-          const initials = name.split(' ').map((n: string) => n[0] ?? '').join('').slice(0, 2).toUpperCase();
-          const gId = scheduleGroupMap[s.schedule_id] ?? '';
-          const color = groupColorMap[gId] ?? '#14B8A6';
-          return {
-            employee: name.split(' ')[0] ?? '',
-            initial: initials,
-            time: `${fmtTime(s.start_time)}-${fmtTime(s.end_time)}`,
-            color,
-            active: isToday,
-          };
-        })
-      : [];
+    const shifts = weekShifts
+      .filter((s) => s.date === dateStr)
+      .map((s) => {
+        const name = s.assigned_to ? (userNameMap[s.assigned_to] ?? 'Unknown') : 'Unassigned';
+        const initials = name.split(' ').map((n: string) => n[0] ?? '').join('').slice(0, 2).toUpperCase();
+        const gId = scheduleGroupMap[s.schedule_id] ?? '';
+        const color = groupColorMap[gId] ?? '#14B8A6';
+        return {
+          employee: name.split(' ')[0] ?? '',
+          initial: initials,
+          time: `${fmtTime(s.start_time)}-${fmtTime(s.end_time)}`,
+          color,
+          active: isToday,
+        };
+      });
 
     return {
       day,

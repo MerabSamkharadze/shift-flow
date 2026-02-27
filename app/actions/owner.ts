@@ -48,7 +48,7 @@ export async function inviteManager(formData: FormData) {
     // Create the auth user and send the invite email.
     const { data: authData, error: inviteError } =
       await service.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${siteUrl}/auth/confirm`,
+        redirectTo: `${siteUrl}/auth/callback`,
       });
 
     if (inviteError) return { error: inviteError.message };

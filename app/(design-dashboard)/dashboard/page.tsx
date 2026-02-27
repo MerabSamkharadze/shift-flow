@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -37,6 +38,56 @@ function getCurrentMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+async function fetchViewData(
+  view: ViewName,
+  profile: { id: string; role: string; company_id: string },
+  searchParams: { group?: string; week?: string; month?: string },
+): Promise<unknown> {
+  switch (view) {
+    case "dashboard":
+      return getManagerDashboardData(profile.id);
+    case "employees":
+      return getManagerEmployeesData(profile.id);
+    case "schedule-builder": {
+      const groupsData = await getManagerGroupsData(profile.id);
+      const groups = groupsData.groups;
+      const selectedGroupId = searchParams.group ?? groups[0]?.id ?? "";
+      const weekStart = searchParams.week ?? getCurrentWeekStart();
+      if (selectedGroupId) {
+        return getScheduleData(profile.id, selectedGroupId, weekStart);
+      }
+      return { groups: [], members: [], templates: [], schedule: null, shifts: [], prevScheduleExists: false };
+    }
+    case "shift-templates": {
+      const groupsData = await getManagerGroupsData(profile.id);
+      const selectedGroupId = searchParams.group ?? groupsData.groups[0]?.id ?? null;
+      let templates: { id: string; name: string; start_time: string; end_time: string; color: string | null }[] = [];
+      if (selectedGroupId) {
+        const detail = await getGroupDetailData(selectedGroupId, profile.company_id, profile.id);
+        templates = detail?.templates ?? [];
+      }
+      return { groups: groupsData.groups, templates, selectedGroupId };
+    }
+    case "marketplace":
+      return getManagerSwapsData(profile.id);
+    case "monthly-report": {
+      const month = searchParams.month ?? getCurrentMonth();
+      return getMonthlyReportData(profile.company_id, month);
+    }
+    case "hours-summary": {
+      const month = searchParams.month ?? getCurrentMonth();
+      return getHoursSummaryData(profile.id, month);
+    }
+    case "managers":
+      if (profile.role === "owner") {
+        return getOwnerManagersData(profile.company_id);
+      }
+      return { managers: [] };
+    default:
+      return null;
+  }
+}
+
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -45,6 +96,9 @@ export default async function DashboardPage({
   // ── Auth ──────────────────────────────────────────────────────────────────
   const supabase = createClient();
 
+  // getUser() validates the JWT — middleware already refreshed the session,
+  // but we still need the user id. Supabase SSR deduplicates the actual
+  // network call within the same request when cookies haven't changed.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -58,7 +112,6 @@ export default async function DashboardPage({
 
   if (!profile) redirect("/auth/signout");
 
-  // Only managers and owners can access this dashboard
   if (profile.role === "employee") redirect("/employee");
 
   const dashboardUser: DashboardUser = {
@@ -72,73 +125,15 @@ export default async function DashboardPage({
 
   // ── View + Data Fetching ──────────────────────────────────────────────────
   const view = (searchParams.view ?? "dashboard") as ViewName;
-
-  let viewData: unknown = null;
-
-  switch (view) {
-    case "dashboard": {
-      viewData = await getManagerDashboardData(profile.id);
-      break;
-    }
-    case "employees": {
-      viewData = await getManagerEmployeesData(profile.id);
-      break;
-    }
-    case "schedule-builder": {
-      const groupsData = await getManagerGroupsData(profile.id);
-      const groups = groupsData.groups;
-      const selectedGroupId = searchParams.group ?? groups[0]?.id ?? "";
-      const weekStart = searchParams.week ?? getCurrentWeekStart();
-      if (selectedGroupId) {
-        viewData = await getScheduleData(profile.id, selectedGroupId, weekStart);
-      } else {
-        viewData = { groups: [], members: [], templates: [], schedule: null, shifts: [], prevScheduleExists: false };
-      }
-      break;
-    }
-    case "shift-templates": {
-      const groupsData = await getManagerGroupsData(profile.id);
-      const selectedGroupId = searchParams.group ?? groupsData.groups[0]?.id ?? null;
-      let templates: { id: string; name: string; start_time: string; end_time: string; color: string | null }[] = [];
-      if (selectedGroupId) {
-        const detail = await getGroupDetailData(selectedGroupId, profile.company_id, profile.id);
-        templates = detail?.templates ?? [];
-      }
-      viewData = { groups: groupsData.groups, templates, selectedGroupId };
-      break;
-    }
-    case "marketplace": {
-      viewData = await getManagerSwapsData(profile.id);
-      break;
-    }
-    case "monthly-report": {
-      const month = searchParams.month ?? getCurrentMonth();
-      viewData = await getMonthlyReportData(profile.company_id, month);
-      break;
-    }
-    case "hours-summary": {
-      const month = searchParams.month ?? getCurrentMonth();
-      viewData = await getHoursSummaryData(profile.id, month);
-      break;
-    }
-    case "managers": {
-      if (profile.role === "owner") {
-        viewData = await getOwnerManagersData(profile.company_id);
-      } else {
-        viewData = { managers: [] };
-      }
-      break;
-    }
-    // notifications, settings, billing, branches → no server data
-    default:
-      viewData = null;
-  }
+  const viewData = await fetchViewData(view, profile, searchParams);
 
   return (
-    <DashboardClient
-      user={dashboardUser}
-      initialView={view}
-      viewData={viewData}
-    />
+    <Suspense fallback={null}>
+      <DashboardClient
+        user={dashboardUser}
+        initialView={view}
+        viewData={viewData}
+      />
+    </Suspense>
   );
 }

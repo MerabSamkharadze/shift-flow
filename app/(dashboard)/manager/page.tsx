@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getManagerDashboardData } from "@/lib/cache";
 import {
   Card,
@@ -22,20 +22,8 @@ function fmtDate(d: string) {
 }
 
 export default async function ManagerDashboardPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, first_name, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) redirect("/auth/signout");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "manager") redirect(`/${profile.role}`);
 
   // ── Cached data fetch ───────────────────────────────────────────────────────

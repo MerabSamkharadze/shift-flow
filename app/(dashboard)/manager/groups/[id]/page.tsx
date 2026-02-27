@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getGroupDetailData } from "@/lib/cache";
 import { GroupDetailTabs } from "@/components/manager/group-detail-tabs";
 
@@ -10,20 +10,9 @@ export default async function GroupDetailPage({
 }: {
   params: { id: string };
 }) {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, company_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "manager") redirect("/manager");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
+  if (profile.role !== "manager") redirect("/manager");
 
   const data = await getGroupDetailData(params.id, profile.company_id, profile.id);
   if (!data) notFound();

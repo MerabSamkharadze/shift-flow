@@ -1,24 +1,10 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { LogoutButton } from "@/components/layout/logout-button";
 
-export const dynamic = "force-dynamic";
-
 export default async function EmployeeAccountPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("first_name, last_name, email, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) redirect("/auth/login");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
 
   const firstName = profile.first_name ?? "";
   const lastName = profile.last_name ?? "";

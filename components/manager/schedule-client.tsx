@@ -282,7 +282,6 @@ export function ScheduleClient({
       applyOptimistic({ type: "add", shift: optimisticShift });
       const result = await addShift(schedule.id, userId, date, selectedTemplateId);
       if (result.error) setError(result.error);
-      else router.refresh();
     });
   }
 
@@ -303,7 +302,6 @@ export function ScheduleClient({
       });
       const result = await updateShift(shift.id, selectedTemplateId);
       if (result.error) setError(result.error);
-      else router.refresh();
     });
     void memberName;
   }
@@ -317,7 +315,6 @@ export function ScheduleClient({
       applyOptimistic({ type: "remove", shiftId: shift.id });
       const result = await removeShift(shift.id);
       if (result.error) setError(result.error);
-      else router.refresh();
     });
   }
 
@@ -331,7 +328,6 @@ export function ScheduleClient({
       applyOptimistic({ type: "note", shiftId: shift.id, note });
       const result = await addShiftNote(shift.id, noteText);
       if (result.error) setError(result.error);
-      else router.refresh();
     });
   }
 
@@ -349,7 +345,6 @@ export function ScheduleClient({
       applyOptimistic({ type: "overtime", shiftId: shift.id, extraHours, extraHoursNotes });
       const result = await saveExtraHours(shift.id, extraHours, extraHoursNotes);
       if (result.error) setError(result.error);
-      else router.refresh();
     });
   }
 

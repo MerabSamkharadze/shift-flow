@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getEmployeeScheduleData } from "@/lib/cache";
 import {
   MyScheduleClient,
@@ -26,20 +26,9 @@ export default async function EmployeePage({
 }: {
   searchParams: { week?: string };
 }) {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "employee") redirect("/auth/login");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
+  if (profile.role !== "employee") redirect("/auth/login");
 
   const weekStart = getMonday(searchParams.week);
 

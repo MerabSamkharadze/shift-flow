@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
 import { getOwnerDashboardData } from "@/lib/cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -101,20 +101,8 @@ function StatusBadge({ status }: { status: ManagerStatus }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function OwnerDashboardPage() {
-  const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, first_name, role, company_id")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile) redirect("/auth/signout");
+  const { user, profile } = await getSessionProfile();
+  if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "owner") redirect(`/${profile.role}`);
 
   // ── Cached data fetch ───────────────────────────────────────────────────────

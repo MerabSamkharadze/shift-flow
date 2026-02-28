@@ -469,6 +469,209 @@ export const getOwnerMonthlyReportData = unstable_cache(
   { tags: ["owner-monthly-report"], revalidate: 60 },
 );
 
+// ─── Owner Hours Summary ─────────────────────────────────────────────────────
+
+export const getOwnerHoursSummaryData = unstable_cache(
+  async (companyId: string, monthParam: string) => {
+    const service = createServiceClient();
+
+    const [yearStr, monthStr] = monthParam.split("-");
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const monthStart = `${yearStr}-${monthStr}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthEnd = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
+
+    // Compute week boundaries (Mon–Sun) that overlap the month
+    const weeks: { key: string; label: string; dates: string; start: string; end: string }[] = [];
+    const firstDate = new Date(year, month - 1, 1);
+    // Go back to Monday of the first week
+    let cursor = new Date(firstDate);
+    const dayOfWeek = cursor.getDay();
+    const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    cursor.setDate(cursor.getDate() + diffToMon);
+
+    let weekNum = 1;
+    while (true) {
+      const wStart = new Date(cursor);
+      const wEnd = new Date(cursor);
+      wEnd.setDate(wEnd.getDate() + 6);
+
+      const wStartStr = wStart.toISOString().slice(0, 10);
+      const wEndStr = wEnd.toISOString().slice(0, 10);
+
+      // Only include if the week overlaps the month
+      if (wStartStr > monthEnd) break;
+
+      const fmtShort = (d: Date) =>
+        d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+      weeks.push({
+        key: `week${weekNum}`,
+        label: `Week ${weekNum}`,
+        dates: `${fmtShort(wStart)} – ${fmtShort(wEnd)}`,
+        start: wStartStr,
+        end: wEndStr,
+      });
+      weekNum++;
+      cursor.setDate(cursor.getDate() + 7);
+      if (weekNum > 6) break; // safety
+    }
+
+    // Get schedules in range
+    const { data: schedules } = await service
+      .from("schedules")
+      .select("id, group_id")
+      .eq("company_id", companyId)
+      .lte("week_start_date", monthEnd)
+      .gte("week_end_date", monthStart);
+
+    const scheduleIds = (schedules ?? []).map((s) => s.id);
+
+    // Get groups for branch names
+    const { data: groups } = await service
+      .from("groups")
+      .select("id, name")
+      .eq("company_id", companyId);
+
+    const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]));
+    const scheduleGroupMap = new Map(
+      (schedules ?? []).map((s) => [s.id, s.group_id as string]),
+    );
+
+    if (scheduleIds.length === 0) {
+      return {
+        employees: [],
+        weeks,
+        branches: [] as string[],
+      };
+    }
+
+    // Shifts with user info
+    const { data: rawShifts } = await service
+      .from("shifts")
+      .select(
+        "assigned_to, schedule_id, date, start_time, end_time, extra_hours, users!shifts_assigned_to_fkey(first_name, last_name)",
+      )
+      .in("schedule_id", scheduleIds)
+      .gte("date", monthStart)
+      .lte("date", monthEnd);
+
+    type RawShift = {
+      assigned_to: string;
+      schedule_id: string;
+      date: string;
+      start_time: string;
+      end_time: string;
+      extra_hours: number | null;
+      users: { first_name: string | null; last_name: string | null } | null;
+    };
+
+    // Per-employee, per-week aggregation
+    type WeekAgg = { scheduled: number; actual: number; overtime: number };
+    type EmpAgg = {
+      name: string;
+      branches: Set<string>;
+      weeks: Map<string, WeekAgg>;
+      totalScheduled: number;
+      totalActual: number;
+      totalOvertime: number;
+      daysWorked: Set<string>;
+    };
+
+    const agg = new Map<string, EmpAgg>();
+
+    for (const raw of (rawShifts ?? []) as unknown as RawShift[]) {
+      const hours = shiftHours(raw.start_time, raw.end_time);
+      const extra = raw.extra_hours ?? 0;
+      const u = raw.users;
+      const name = u
+        ? `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "Unknown"
+        : "Unknown";
+
+      const groupId = scheduleGroupMap.get(raw.schedule_id) ?? "";
+      const branchName = groupMap.get(groupId) ?? "Unknown";
+
+      // Find which week this date belongs to
+      let weekKey = "";
+      for (const w of weeks) {
+        if (raw.date >= w.start && raw.date <= w.end) {
+          weekKey = w.key;
+          break;
+        }
+      }
+
+      let emp = agg.get(raw.assigned_to);
+      if (!emp) {
+        emp = {
+          name,
+          branches: new Set(),
+          weeks: new Map(),
+          totalScheduled: 0,
+          totalActual: 0,
+          totalOvertime: 0,
+          daysWorked: new Set(),
+        };
+        agg.set(raw.assigned_to, emp);
+      }
+
+      emp.branches.add(branchName);
+      emp.totalActual += hours;
+      emp.totalOvertime += extra;
+      emp.totalScheduled += hours - extra; // scheduled = actual - overtime
+      emp.daysWorked.add(raw.date);
+
+      if (weekKey) {
+        const wk = emp.weeks.get(weekKey) ?? { scheduled: 0, actual: 0, overtime: 0 };
+        wk.actual += hours;
+        wk.overtime += extra;
+        wk.scheduled += hours - extra;
+        emp.weeks.set(weekKey, wk);
+      }
+    }
+
+    const branchSet = new Set<string>();
+    const employees = [...agg.values()]
+      .map((e) => {
+        const branchArr = [...e.branches];
+        branchArr.forEach((b) => branchSet.add(b));
+
+        const weeklyData: Record<string, { scheduled: number; actual: number; overtime: number }> = {};
+        for (const w of weeks) {
+          const wk = e.weeks.get(w.key);
+          weeklyData[w.key] = wk
+            ? {
+                scheduled: Math.round(wk.scheduled * 100) / 100,
+                actual: Math.round(wk.actual * 100) / 100,
+                overtime: Math.round(wk.overtime * 100) / 100,
+              }
+            : { scheduled: 0, actual: 0, overtime: 0 };
+        }
+
+        return {
+          name: e.name,
+          branch: branchArr.join(", "),
+          weekly: weeklyData,
+          monthly: {
+            scheduled: Math.round(e.totalScheduled * 100) / 100,
+            actual: Math.round(e.totalActual * 100) / 100,
+            overtime: Math.round(e.totalOvertime * 100) / 100,
+            daysWorked: e.daysWorked.size,
+          },
+        };
+      })
+      .sort((a, b) => b.monthly.actual - a.monthly.actual);
+
+    return {
+      employees,
+      weeks,
+      branches: [...branchSet].sort(),
+    };
+  },
+  ["owner-hours-summary"],
+  { tags: ["owner-hours-summary"], revalidate: 60 },
+);
+
 // ─── Manager Dashboard ────────────────────────────────────────────────────────
 
 export const getManagerDashboardData = unstable_cache(

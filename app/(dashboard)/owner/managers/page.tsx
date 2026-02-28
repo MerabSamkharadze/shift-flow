@@ -12,18 +12,24 @@ export default async function ManagersPage() {
   const { managers } = await getOwnerManagersData(profile.company_id);
 
   return (
-      <div>
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold">Managers</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              Invite and manage your company&apos;s managers.
-            </p>
-          </div>
-          <InviteManagerDialog />
+    <div className="space-y-4 md:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1
+            className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
+            style={{ fontFamily: "Syne, sans-serif" }}
+          >
+            Managers
+          </h1>
+          <p className="text-sm md:text-base text-[#7A94AD]">
+            Oversee your management team
+          </p>
         </div>
-
-        <ManagersTable managers={managers} />
+        <InviteManagerDialog />
       </div>
+
+      <ManagersTable managers={managers} />
+    </div>
   );
 }

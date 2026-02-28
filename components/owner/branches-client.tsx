@@ -2,21 +2,22 @@
 
 import { useState } from "react";
 
-type Branch = {
+type Group = {
   id: string;
   name: string;
   color: string;
   isActive: boolean;
-  createdAt: string;
-  managerId: string;
-  managerName: string;
   employeeCount: number;
+  createdAt: string;
 };
 
-const STATUS_CONFIG = {
-  active: { label: "Active", dot: "bg-[#4ECBA0] animate-pulse", bg: "bg-[#4ECBA0]/10", text: "text-[#4ECBA0]" },
-  inactive: { label: "Inactive", dot: "bg-[#7A94AD]", bg: "bg-[#7A94AD]/10", text: "text-[#7A94AD]" },
+type ManagerBranch = {
+  managerId: string;
+  managerName: string;
+  groups: Group[];
 };
+
+const COLOR_POOL = ["#4ECBA0", "#F5A623", "#E8604C", "#14B8A6"];
 
 function getInitials(name: string) {
   return name
@@ -35,55 +36,77 @@ function fmtDate(d: string) {
   });
 }
 
-export function BranchesClient({ branches }: { branches: Branch[] }) {
+export function BranchesClient({ branches }: { branches: ManagerBranch[] }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("all");
-  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState<ManagerBranch | null>(null);
+  // branchNames: owner-ის მიერ დარქმეული სახელები (managerId → customName)
+  const [branchNames, setBranchNames] = useState<Record<string, string>>({});
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
-  const counts = {
-    all: branches.length,
-    active: branches.filter((b) => b.isActive).length,
-    inactive: branches.filter((b) => !b.isActive).length,
-  };
-
-  const totalEmployees = branches.reduce((s, b) => s + b.employeeCount, 0);
-
-  const filters: { id: "all" | "active" | "inactive"; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "active", label: "Active" },
-    { id: "inactive", label: "Inactive" },
-  ];
+  const totalGroups = branches.reduce((s, b) => s + b.groups.length, 0);
+  const totalEmployees = branches.reduce(
+    (s, b) => s + b.groups.reduce((gs, g) => gs + g.employeeCount, 0),
+    0
+  );
 
   const filtered = branches.filter((b) => {
-    const matchSearch =
-      b.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      b.managerName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchFilter =
-      activeFilter === "all" ||
-      (activeFilter === "active" && b.isActive) ||
-      (activeFilter === "inactive" && !b.isActive);
-    return matchSearch && matchFilter;
+    const displayName = branchNames[b.managerId] || b.managerName;
+    const groupNames = b.groups.map((g) => g.name).join(" ");
+    const searchIn = `${displayName} ${b.managerName} ${groupNames}`.toLowerCase();
+    return searchIn.includes(searchQuery.toLowerCase());
   });
+
+  const handleStartRename = (managerId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingName(managerId);
+    setEditValue(branchNames[managerId] || "");
+  };
+
+  const handleSaveRename = (managerId: string) => {
+    if (editValue.trim()) {
+      setBranchNames((prev) => ({ ...prev, [managerId]: editValue.trim() }));
+    } else {
+      // თუ ცარიელია, წაშლა (default-ზე დაბრუნება)
+      setBranchNames((prev) => {
+        const next = { ...prev };
+        delete next[managerId];
+        return next;
+      });
+    }
+    setEditingName(null);
+  };
 
   return (
     <div className="space-y-4 md:space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
         <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#4ECBA0]/10">
-              <i className="ri-building-line text-[#4ECBA0]" />
+            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F5A623]/10">
+              <i className="ri-user-star-line text-[#F5A623]" />
             </div>
-            <span className="text-xs text-[#7A94AD]">Total Branches</span>
+            <span className="text-xs text-[#7A94AD]">Managers</span>
           </div>
           <div className="text-2xl font-bold text-[#F0EDE8]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            {counts.all}
+            {branches.length}
           </div>
         </div>
         <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F5A623]/10">
-              <i className="ri-team-line text-[#F5A623]" />
+            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#4ECBA0]/10">
+              <i className="ri-group-line text-[#4ECBA0]" />
+            </div>
+            <span className="text-xs text-[#7A94AD]">Total Groups</span>
+          </div>
+          <div className="text-2xl font-bold text-[#F0EDE8]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+            {totalGroups}
+          </div>
+        </div>
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#14B8A6]/10">
+              <i className="ri-team-line text-[#14B8A6]" />
             </div>
             <span className="text-xs text-[#7A94AD]">Total Employees</span>
           </div>
@@ -91,140 +114,159 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
             {totalEmployees}
           </div>
         </div>
-        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#4ECBA0]/10">
-              <i className="ri-checkbox-circle-line text-[#4ECBA0]" />
-            </div>
-            <span className="text-xs text-[#7A94AD]">Active</span>
-          </div>
-          <div className="text-2xl font-bold text-[#4ECBA0]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            {counts.active}
-          </div>
-        </div>
-        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#7A94AD]/10">
-              <i className="ri-close-circle-line text-[#7A94AD]" />
-            </div>
-            <span className="text-xs text-[#7A94AD]">Inactive</span>
-          </div>
-          <div className="text-2xl font-bold text-[#7A94AD]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-            {counts.inactive}
-          </div>
-        </div>
       </div>
 
-      {/* Search & Filters */}
-      <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3 lg:gap-4">
-        <div className="flex-1 relative">
-          <i className="ri-search-line absolute left-4 top-1/2 -translate-y-1/2 text-[#7A94AD] text-lg" />
-          <input
-            type="text"
-            placeholder="Search branches..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-2.5 md:py-3 bg-[#142236] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm placeholder-[#7A94AD] focus:outline-none focus:border-[#F5A623]/50 transition-colors"
-          />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {filters.map((filter) => (
-            <button
-              key={filter.id}
-              onClick={() => setActiveFilter(filter.id)}
-              className={`px-3 md:px-4 py-2 md:py-2.5 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap ${
-                activeFilter === filter.id
-                  ? "bg-[#F5A623] text-[#0A1628]"
-                  : "bg-[#142236] text-[#7A94AD] hover:text-[#F0EDE8] border border-white/[0.07]"
-              }`}
-            >
-              {filter.label}
-              <span className={`ml-1.5 md:ml-2 ${activeFilter === filter.id ? "text-[#0A1628]" : "text-[#7A94AD]"}`}>
-                {counts[filter.id]}
-              </span>
-            </button>
-          ))}
-        </div>
+      {/* Search */}
+      <div className="relative">
+        <i className="ri-search-line absolute left-4 top-1/2 -translate-y-1/2 text-[#7A94AD] text-lg" />
+        <input
+          type="text"
+          placeholder="Search by manager or group name..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-12 pr-4 py-2.5 md:py-3 bg-[#142236] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm placeholder-[#7A94AD] focus:outline-none focus:border-[#F5A623]/50 transition-colors"
+        />
       </div>
 
-      {/* Branch Cards */}
+      {/* Manager Branch Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {filtered.map((branch) => {
-          const status = branch.isActive ? STATUS_CONFIG.active : STATUS_CONFIG.inactive;
+        {filtered.map((branch, idx) => {
+          const color = COLOR_POOL[idx % COLOR_POOL.length];
+          const displayName = branchNames[branch.managerId] || branch.managerName;
+          const totalMembers = branch.groups.reduce((s, g) => s + g.employeeCount, 0);
+          const isEditing = editingName === branch.managerId;
+
           return (
             <div
-              key={branch.id}
-              className="bg-[#142236] border border-white/[0.07] rounded-xl overflow-hidden hover:bg-[#1A2E45] hover:-translate-y-0.5 hover:border-[#F5A623]/30 transition-all duration-200 cursor-pointer"
+              key={branch.managerId}
+              className="bg-[#142236] border border-white/[0.07] rounded-xl overflow-hidden hover:bg-[#1A2E45] hover:border-[#F5A623]/30 transition-all duration-200 cursor-pointer"
               onClick={() => setSelectedBranch(branch)}
             >
               {/* Color accent bar */}
-              <div className="h-1" style={{ backgroundColor: branch.color }} />
+              <div className="h-1" style={{ backgroundColor: color }} />
 
               <div className="p-5 md:p-6">
-                {/* Top row */}
+                {/* Header: Manager avatar + branch name */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div
-                      className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center text-xl"
-                      style={{ backgroundColor: branch.color + "15", color: branch.color }}
-                    >
-                      <i className="ri-building-line" />
-                    </div>
-                    <div>
-                      <h3
-                        className="text-base md:text-lg font-semibold text-[#F0EDE8]"
-                        style={{ fontFamily: "Syne, sans-serif" }}
-                      >
-                        {branch.name}
-                      </h3>
-                      <p className="text-xs md:text-sm text-[#7A94AD]">
-                        {branch.employeeCount} employee{branch.employeeCount !== 1 ? "s" : ""}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full ${status.bg}`}>
-                    <div className={`w-2 h-2 rounded-full ${status.dot}`} />
-                    <span className={`text-xs font-medium ${status.text}`}>{status.label}</span>
-                  </div>
-                </div>
-
-                {/* Stats row */}
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  <div className="bg-[#0A1628] rounded-lg p-2.5 text-center">
-                    <div className="text-lg font-bold text-[#F0EDE8]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-                      {branch.employeeCount}
-                    </div>
-                    <div className="text-[10px] text-[#7A94AD] mt-0.5">Members</div>
-                  </div>
-                  <div className="bg-[#0A1628] rounded-lg p-2.5 text-center">
-                    <div
-                      className={`text-lg font-bold ${branch.isActive ? "text-[#4ECBA0]" : "text-[#7A94AD]"}`}
-                      style={{ fontFamily: "JetBrains Mono, monospace" }}
-                    >
-                      {branch.isActive ? "Yes" : "No"}
-                    </div>
-                    <div className="text-[10px] text-[#7A94AD] mt-0.5">Active</div>
-                  </div>
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between pt-4 border-t border-white/[0.07]">
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
-                      style={{ backgroundColor: branch.color + "20", color: branch.color }}
+                      className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-base md:text-lg font-semibold"
+                      style={{ backgroundColor: color + "20", color }}
                     >
                       {getInitials(branch.managerName)}
                     </div>
                     <div>
-                      <div className="text-xs text-[#7A94AD]">Manager</div>
-                      <div className="text-sm text-[#F0EDE8]">{branch.managerName}</div>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSaveRename(branch.managerId);
+                              if (e.key === "Escape") setEditingName(null);
+                            }}
+                            className="px-2 py-1 bg-[#0A1628] border border-[#F5A623]/50 rounded text-[#F0EDE8] text-sm focus:outline-none w-36"
+                            placeholder={branch.managerName}
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleSaveRename(branch.managerId)}
+                            className="w-7 h-7 flex items-center justify-center rounded bg-[#F5A623] text-[#0A1628]"
+                          >
+                            <i className="ri-check-line text-sm" />
+                          </button>
+                          <button
+                            onClick={() => setEditingName(null)}
+                            className="w-7 h-7 flex items-center justify-center rounded bg-white/[0.05] text-[#7A94AD] hover:text-[#F0EDE8]"
+                          >
+                            <i className="ri-close-line text-sm" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <h3
+                            className="text-base md:text-lg font-semibold text-[#F0EDE8]"
+                            style={{ fontFamily: "Syne, sans-serif" }}
+                          >
+                            {displayName}
+                          </h3>
+                          <button
+                            onClick={(e) => handleStartRename(branch.managerId, e)}
+                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/[0.05] text-[#7A94AD] hover:text-[#F5A623] transition-colors opacity-0 group-hover:opacity-100"
+                            title="Rename branch"
+                          >
+                            <i className="ri-edit-line text-xs" />
+                          </button>
+                        </div>
+                      )}
+                      {branchNames[branch.managerId] && !isEditing && (
+                        <span className="text-xs text-[#7A94AD]">{branch.managerName}</span>
+                      )}
+                      {!branchNames[branch.managerId] && !isEditing && (
+                        <span className="text-xs text-[#7A94AD]">Manager</span>
+                      )}
                     </div>
                   </div>
-                  <span className="text-xs text-[#7A94AD]">
-                    <i className="ri-calendar-line mr-1" />
-                    {fmtDate(branch.createdAt)}
-                  </span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={(e) => handleStartRename(branch.managerId, e)}
+                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#0A1628] hover:bg-[#F5A623]/10 text-[#7A94AD] hover:text-[#F5A623] transition-colors"
+                      title="Rename"
+                    >
+                      <i className="ri-edit-line text-sm" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Groups list */}
+                <div className="space-y-2 mb-4">
+                  {branch.groups.map((group) => (
+                    <div
+                      key={group.id}
+                      className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg"
+                    >
+                      <div
+                        className="w-3 h-3 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: group.color }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-[#F0EDE8] font-medium">{group.name}</span>
+                      </div>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
+                        style={{
+                          backgroundColor: group.color + "20",
+                          color: group.color,
+                        }}
+                      >
+                        {group.employeeCount} member{group.employeeCount !== 1 ? "s" : ""}
+                      </span>
+                      <span
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                          group.isActive
+                            ? "bg-[#4ECBA0]/10 text-[#4ECBA0]"
+                            : "bg-[#7A94AD]/10 text-[#7A94AD]"
+                        }`}
+                      >
+                        {group.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer stats */}
+                <div className="flex items-center justify-between pt-4 border-t border-white/[0.07]">
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-[#7A94AD]">
+                      <i className="ri-group-line mr-1" />
+                      {branch.groups.length} group{branch.groups.length !== 1 ? "s" : ""}
+                    </span>
+                    <span className="text-xs text-[#7A94AD]">
+                      <i className="ri-team-line mr-1" />
+                      {totalMembers} member{totalMembers !== 1 ? "s" : ""}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -239,7 +281,7 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
             <i className="ri-building-line text-3xl text-[#7A94AD]" />
           </div>
           <p className="text-[#7A94AD] text-sm">
-            {searchQuery || activeFilter !== "all"
+            {searchQuery
               ? "No branches found matching your search"
               : "No branches yet."}
           </p>
@@ -254,29 +296,31 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
             onClick={() => setSelectedBranch(null)}
           />
           <div className="relative w-full max-w-lg bg-[#142236] border border-white/[0.07] rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
-            {/* Accent bar */}
-            <div className="h-1.5" style={{ backgroundColor: selectedBranch.color }} />
-
             {/* Header */}
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-4">
                   <div
-                    className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl"
-                    style={{ backgroundColor: selectedBranch.color + "15", color: selectedBranch.color }}
+                    className="w-14 h-14 rounded-full flex items-center justify-center text-xl font-semibold"
+                    style={{
+                      backgroundColor: COLOR_POOL[branches.indexOf(selectedBranch) % COLOR_POOL.length] + "20",
+                      color: COLOR_POOL[branches.indexOf(selectedBranch) % COLOR_POOL.length],
+                    }}
                   >
-                    <i className="ri-building-line" />
+                    {getInitials(selectedBranch.managerName)}
                   </div>
                   <div>
                     <h2
                       className="text-xl font-semibold text-[#F0EDE8]"
                       style={{ fontFamily: "Syne, sans-serif" }}
                     >
-                      {selectedBranch.name}
+                      {branchNames[selectedBranch.managerId] || selectedBranch.managerName}
                     </h2>
-                    <p className="text-sm text-[#7A94AD] mt-0.5">
-                      {selectedBranch.isActive ? "Active" : "Inactive"} branch
-                    </p>
+                    {branchNames[selectedBranch.managerId] && (
+                      <p className="text-sm text-[#7A94AD] mt-0.5">
+                        Manager: {selectedBranch.managerName}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <button
@@ -294,62 +338,63 @@ export function BranchesClient({ branches }: { branches: Branch[] }) {
                 <div className="bg-[#0A1628] rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#4ECBA0]/10">
-                      <i className="ri-team-line text-[#4ECBA0] text-sm" />
+                      <i className="ri-group-line text-[#4ECBA0] text-sm" />
                     </div>
-                    <span className="text-xs text-[#7A94AD]">Members</span>
+                    <span className="text-xs text-[#7A94AD]">Groups</span>
                   </div>
                   <div className="text-2xl font-bold text-[#F0EDE8]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
-                    {selectedBranch.employeeCount}
+                    {selectedBranch.groups.length}
                   </div>
                 </div>
                 <div className="bg-[#0A1628] rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F5A623]/10">
-                      <i className="ri-checkbox-circle-line text-[#F5A623] text-sm" />
+                      <i className="ri-team-line text-[#F5A623] text-sm" />
                     </div>
-                    <span className="text-xs text-[#7A94AD]">Status</span>
+                    <span className="text-xs text-[#7A94AD]">Total Members</span>
                   </div>
-                  <div
-                    className={`text-2xl font-bold ${selectedBranch.isActive ? "text-[#4ECBA0]" : "text-[#7A94AD]"}`}
-                    style={{ fontFamily: "JetBrains Mono, monospace" }}
-                  >
-                    {selectedBranch.isActive ? "Active" : "Off"}
+                  <div className="text-2xl font-bold text-[#F0EDE8]" style={{ fontFamily: "JetBrains Mono, monospace" }}>
+                    {selectedBranch.groups.reduce((s, g) => s + g.employeeCount, 0)}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Details */}
-            <div className="px-6 pb-6 space-y-2">
-              <div className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
-                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F5A623]/10">
-                  <i className="ri-user-star-line text-[#F5A623] text-sm" />
-                </div>
-                <div>
-                  <div className="text-xs text-[#7A94AD]">Manager</div>
-                  <div className="text-sm text-[#F0EDE8]">{selectedBranch.managerName}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
-                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#4ECBA0]/10">
-                  <i className="ri-palette-line text-[#4ECBA0] text-sm" />
-                </div>
-                <div>
-                  <div className="text-xs text-[#7A94AD]">Color</div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: selectedBranch.color }} />
-                    <span className="text-sm text-[#F0EDE8]">{selectedBranch.color}</span>
+            {/* Groups list */}
+            <div className="px-6 pb-6">
+              <h3 className="text-xs text-[#7A94AD] uppercase tracking-wider mb-3">Groups</h3>
+              <div className="space-y-2">
+                {selectedBranch.groups.map((group) => (
+                  <div
+                    key={group.id}
+                    className="flex items-center gap-3 p-4 bg-[#0A1628] rounded-lg"
+                  >
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: group.color + "15" }}
+                    >
+                      <div
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: group.color }}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[#F0EDE8]">{group.name}</div>
+                      <div className="text-xs text-[#7A94AD] mt-0.5">
+                        {group.employeeCount} member{group.employeeCount !== 1 ? "s" : ""} · Created {fmtDate(group.createdAt)}
+                      </div>
+                    </div>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full flex-shrink-0 ${
+                        group.isActive
+                          ? "bg-[#4ECBA0]/10 text-[#4ECBA0]"
+                          : "bg-[#7A94AD]/10 text-[#7A94AD]"
+                      }`}
+                    >
+                      {group.isActive ? "Active" : "Inactive"}
+                    </span>
                   </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
-                <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#E8604C]/10">
-                  <i className="ri-calendar-line text-[#E8604C] text-sm" />
-                </div>
-                <div>
-                  <div className="text-xs text-[#7A94AD]">Created</div>
-                  <div className="text-sm text-[#F0EDE8]">{fmtDate(selectedBranch.createdAt)}</div>
-                </div>
+                ))}
               </div>
             </div>
 

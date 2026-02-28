@@ -320,21 +320,153 @@ export const getOwnerBranchesData = unstable_cache(
       );
     }
 
-    const branches = groups.map((g) => ({
-      id: g.id,
-      name: g.name,
-      color: g.color,
-      isActive: g.is_active ?? true,
-      createdAt: g.created_at,
-      managerId: g.manager_id,
-      managerName: managerNameMap.get(g.manager_id) || "Unassigned",
-      employeeCount: memberCountMap.get(g.id) ?? 0,
-    }));
+    // Group by manager
+    const byManager = new Map<
+      string,
+      {
+        managerId: string;
+        managerName: string;
+        groups: {
+          id: string;
+          name: string;
+          color: string;
+          isActive: boolean;
+          employeeCount: number;
+          createdAt: string;
+        }[];
+      }
+    >();
+
+    for (const g of groups) {
+      const mid = g.manager_id;
+      if (!byManager.has(mid)) {
+        byManager.set(mid, {
+          managerId: mid,
+          managerName: managerNameMap.get(mid) || "Unassigned",
+          groups: [],
+        });
+      }
+      byManager.get(mid)!.groups.push({
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        isActive: g.is_active ?? true,
+        employeeCount: memberCountMap.get(g.id) ?? 0,
+        createdAt: g.created_at,
+      });
+    }
+
+    const branches = [...byManager.values()];
 
     return { branches };
   },
   ["owner-branches"],
   { tags: ["owner-branches", "manager-groups"], revalidate: 30 },
+);
+
+// ─── Owner Monthly Report ─────────────────────────────────────────────────────
+
+function shiftHours(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+}
+
+export const getOwnerMonthlyReportData = unstable_cache(
+  async (companyId: string, monthParam: string) => {
+    const service = createServiceClient();
+
+    const [yearStr, monthStr] = monthParam.split("-");
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const monthStart = `${yearStr}-${monthStr}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    const monthEnd = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, "0")}`;
+
+    // Schedules in range
+    const { data: schedules } = await service
+      .from("schedules")
+      .select("id")
+      .eq("company_id", companyId)
+      .lte("week_start_date", monthEnd)
+      .gte("week_end_date", monthStart);
+
+    const scheduleIds = (schedules ?? []).map((s) => s.id);
+
+    if (scheduleIds.length === 0) {
+      return { employees: [], totalHours: 0, totalOvertime: 0, employeeCount: 0 };
+    }
+
+    // Shifts with user names
+    const { data: rawShifts } = await service
+      .from("shifts")
+      .select(
+        "assigned_to, date, start_time, end_time, extra_hours, users!shifts_assigned_to_fkey(first_name, last_name)"
+      )
+      .in("schedule_id", scheduleIds)
+      .gte("date", monthStart)
+      .lte("date", monthEnd);
+
+    type RawShift = {
+      assigned_to: string;
+      date: string;
+      start_time: string;
+      end_time: string;
+      extra_hours: number | null;
+      users: { first_name: string | null; last_name: string | null } | null;
+    };
+
+    const agg = new Map<string, {
+      name: string;
+      totalHours: number;
+      extraHours: number;
+      daysWorked: Set<string>;
+    }>();
+
+    for (const raw of (rawShifts ?? []) as unknown as RawShift[]) {
+      const hours = shiftHours(raw.start_time, raw.end_time);
+      const extra = raw.extra_hours ?? 0;
+      const u = raw.users;
+      const name = u
+        ? `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "Unknown"
+        : "Unknown";
+
+      const existing = agg.get(raw.assigned_to);
+      if (existing) {
+        existing.totalHours += hours;
+        existing.extraHours += extra;
+        existing.daysWorked.add(raw.date);
+      } else {
+        agg.set(raw.assigned_to, {
+          name,
+          totalHours: hours,
+          extraHours: extra,
+          daysWorked: new Set([raw.date]),
+        });
+      }
+    }
+
+    const employees = [...agg.values()]
+      .map((e) => ({
+        name: e.name,
+        totalHours: Math.round(e.totalHours * 100) / 100,
+        extraHours: Math.round(e.extraHours * 100) / 100,
+        daysWorked: e.daysWorked.size,
+      }))
+      .sort((a, b) => b.totalHours - a.totalHours);
+
+    const totalHours = Math.round(employees.reduce((s, e) => s + e.totalHours, 0) * 100) / 100;
+    const totalOvertime = Math.round(employees.reduce((s, e) => s + e.extraHours, 0) * 100) / 100;
+
+    return {
+      employees,
+      totalHours,
+      totalOvertime,
+      employeeCount: employees.length,
+    };
+  },
+  ["owner-monthly-report"],
+  { tags: ["owner-monthly-report"], revalidate: 60 },
 );
 
 // ─── Manager Dashboard ────────────────────────────────────────────────────────

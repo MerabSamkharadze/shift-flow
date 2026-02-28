@@ -139,17 +139,29 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
 }
 
 export async function deleteShiftTemplate(templateId: string, groupId: string) {
-  const { supabase } = await getManagerProfile();
+  const { supabase, profile } = await getManagerProfile();
   try {
+    // Verify group ownership before deleting template
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("id", groupId)
+      .eq("manager_id", profile.id)
+      .single();
+
+    if (!group) return { error: "Group not found or unauthorized" };
+
     const { error } = await supabase
       .from("shift_templates")
       .delete()
-      .eq("id", templateId);
+      .eq("id", templateId)
+      .eq("group_id", groupId);
 
     if (error) return { error: error.message };
 
     revalidateTag("group-detail");
     revalidateTag("manager-schedule");
+    revalidateTag("manager-templates");
     return { error: null };
   } catch {
     return { error: "Something went wrong" };
@@ -189,12 +201,23 @@ export async function addGroupMember(groupId: string, userId: string) {
 }
 
 export async function removeGroupMember(memberId: string, groupId: string) {
-  const { supabase } = await getManagerProfile();
+  const { supabase, profile } = await getManagerProfile();
   try {
+    // Verify group ownership before removing member
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("id", groupId)
+      .eq("manager_id", profile.id)
+      .single();
+
+    if (!group) return { error: "Group not found or unauthorized" };
+
     const { error } = await supabase
       .from("group_members")
       .delete()
-      .eq("id", memberId);
+      .eq("id", memberId)
+      .eq("group_id", groupId);
 
     if (error) return { error: error.message };
 

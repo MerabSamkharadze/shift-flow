@@ -1,6 +1,5 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft } from "lucide-react";
 import { getSessionProfile } from "@/lib/auth";
 import { getGroupDetailData } from "@/lib/cache";
 import { GroupDetailTabs } from "@/components/manager/group-detail-tabs";
@@ -12,7 +11,7 @@ export default async function GroupDetailPage({
 }) {
   const { user, profile } = await getSessionProfile();
   if (!user || !profile) redirect("/auth/login");
-  if (profile.role !== "manager") redirect("/manager");
+  if (profile.role !== "manager") redirect(`/${profile.role}`);
 
   const data = await getGroupDetailData(params.id, profile.company_id, profile.id);
   if (!data) notFound();
@@ -20,21 +19,26 @@ export default async function GroupDetailPage({
   const { group, templates, members, available } = data;
 
   return (
-    <div>
+    <div className="space-y-4 md:space-y-6">
       <Link
         href="/manager/groups"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-6"
+        className="inline-flex items-center gap-1.5 text-sm text-[#7A94AD] hover:text-[#F0EDE8] transition-colors"
       >
-        <ChevronLeft size={14} />
+        <i className="ri-arrow-left-s-line" />
         Groups
       </Link>
 
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3">
         <span
-          className="w-4 h-4 rounded-full shrink-0"
+          className="w-4 h-4 rounded-full flex-shrink-0"
           style={{ backgroundColor: group.color }}
         />
-        <h1 className="text-2xl font-bold">{group.name}</h1>
+        <h1
+          className="text-2xl md:text-3xl font-semibold text-[#F0EDE8]"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          {group.name}
+        </h1>
       </div>
 
       <GroupDetailTabs

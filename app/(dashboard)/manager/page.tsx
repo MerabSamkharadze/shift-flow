@@ -2,13 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth";
 import { getManagerDashboardData } from "@/lib/cache";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Users, LayoutGrid, ArrowLeftRight, CalendarCheck } from "lucide-react";
 
 function fmtTime(t: string) {
   return t.slice(0, 5);
@@ -26,7 +19,6 @@ export default async function ManagerDashboardPage() {
   if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "manager") redirect(`/${profile.role}`);
 
-  // ── Cached data fetch ───────────────────────────────────────────────────────
   const {
     groups,
     employeeCount,
@@ -36,171 +28,190 @@ export default async function ManagerDashboardPage() {
     scheduleGroupMap,
     groupNameMap,
     groupColorMap,
-    shiftDateMap,
     todayShifts,
     userNameMap,
     today,
   } = await getManagerDashboardData(profile.id);
 
-  const todayUserMap = userNameMap;
-  const swapUserMap = userNameMap;
-
-  // ── Stats ────────────────────────────────────────────────────────────────────
   const stats = [
-    { label: "Active Employees", value: employeeCount, icon: Users },
-    { label: "Groups", value: groups.length, icon: LayoutGrid },
-    { label: "Pending Swaps", value: pendingCount, icon: ArrowLeftRight },
-    { label: "Published Schedules", value: publishedCount, icon: CalendarCheck },
+    { label: "Active Employees", value: employeeCount, icon: "ri-team-line", color: "#14B8A6" },
+    { label: "Groups", value: groups.length, icon: "ri-layout-grid-line", color: "#F5A623" },
+    {
+      label: "Pending Swaps",
+      value: pendingCount,
+      icon: "ri-arrow-left-right-line",
+      color: "#E8604C",
+      badge: pendingCount > 0 ? "Action needed" : undefined,
+    },
+    { label: "Published Schedules", value: publishedCount, icon: "ri-calendar-check-line", color: "#4ECBA0" },
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 md:space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">
+        <h1
+          className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
           Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
         </h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          Here&apos;s what&apos;s happening across your team today.
+        <p className="text-sm md:text-base text-[#7A94AD]">
+          Here&apos;s what&apos;s happening across your team today
         </p>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map(({ label, value, icon: Icon }) => (
-          <Card key={label}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {label}
-                </CardTitle>
-                <Icon size={16} className="text-muted-foreground" />
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-5 hover:bg-[#1A2E45] transition-all duration-200"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div
+                className="w-10 h-10 md:w-11 md:h-11 rounded-lg flex items-center justify-center"
+                style={{ backgroundColor: stat.color + "20" }}
+              >
+                <i className={`${stat.icon} text-lg md:text-xl`} style={{ color: stat.color }} />
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{value}</p>
-            </CardContent>
-          </Card>
+              {stat.badge && (
+                <span className="bg-[#E8604C]/15 text-[#E8604C] text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
+                  {stat.badge}
+                </span>
+              )}
+            </div>
+            <div
+              className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
+              style={{ fontFamily: "JetBrains Mono, monospace" }}
+            >
+              {stat.value}
+            </div>
+            <div className="text-xs md:text-sm text-[#7A94AD]">{stat.label}</div>
+          </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Today's Shifts + Pending Swaps */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Today's Shifts */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">
-                Today&apos;s Shifts
-              </CardTitle>
-              <span className="text-xs text-muted-foreground">
-                {fmtDate(today)}
-              </span>
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-semibold text-[#F0EDE8]">
+              Today&apos;s Shifts
+            </h2>
+            <span className="text-xs text-[#7A94AD]">{fmtDate(today)}</span>
+          </div>
+
+          {todayShifts.length === 0 ? (
+            <div className="py-8 text-center">
+              <div className="w-12 h-12 flex items-center justify-center mx-auto mb-3 rounded-full bg-[#0A1628]">
+                <i className="ri-calendar-line text-xl text-[#7A94AD]" />
+              </div>
+              <p className="text-sm text-[#7A94AD]">No shifts scheduled for today</p>
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {todayShifts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No shifts scheduled for today.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {todayShifts.map((shift) => {
-                  const gId = scheduleGroupMap[shift.schedule_id] ?? "";
-                  return (
-                    <li key={shift.id} className="flex items-center gap-3 py-2.5">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: groupColorMap[gId] ?? "#6366f1" }}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {shift.assigned_to
-                            ? (todayUserMap[shift.assigned_to] ?? "Unknown")
-                            : "Unassigned"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {groupNameMap[gId] ?? ""}
-                        </p>
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="space-y-2">
+              {todayShifts.map((shift) => {
+                const gId = scheduleGroupMap[shift.schedule_id] ?? "";
+                return (
+                  <div
+                    key={shift.id}
+                    className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg hover:bg-[#0D1B2A] transition-colors"
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: groupColorMap[gId] ?? "#F5A623" }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#F0EDE8] truncate">
+                        {shift.assigned_to
+                          ? (userNameMap[shift.assigned_to] ?? "Unknown")
+                          : "Unassigned"}
+                      </p>
+                      <p className="text-xs text-[#7A94AD]">
+                        {groupNameMap[gId] ?? ""}
+                      </p>
+                    </div>
+                    <span
+                      className="text-xs text-[#7A94AD] whitespace-nowrap"
+                      style={{ fontFamily: "JetBrains Mono, monospace" }}
+                    >
+                      {fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Pending Swap Requests */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">
-                Pending Swap Requests
-              </CardTitle>
-              {pendingCount > 0 && (
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-semibold text-[#F0EDE8]">
+              Pending Swap Requests
+            </h2>
+            {pendingCount > 0 && (
+              <Link
+                href="/manager/swaps"
+                className="text-xs text-[#F5A623] hover:text-[#E09415] transition-colors"
+              >
+                View all
+              </Link>
+            )}
+          </div>
+
+          {pendingSwaps.length === 0 ? (
+            <div className="py-8 text-center">
+              <div className="w-12 h-12 flex items-center justify-center mx-auto mb-3 rounded-full bg-[#0A1628]">
+                <i className="ri-arrow-left-right-line text-xl text-[#7A94AD]" />
+              </div>
+              <p className="text-sm text-[#7A94AD]">No swap requests pending</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pendingSwaps.map((swap) => (
+                <div
+                  key={swap.id}
+                  className="flex items-center justify-between gap-3 p-3 bg-[#0A1628] rounded-lg hover:bg-[#0D1B2A] transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm text-[#F0EDE8] font-medium truncate">
+                      {userNameMap[swap.from_user_id] ?? "Unknown"}
+                    </span>
+                    <i className="ri-arrow-right-line text-[#7A94AD] text-xs flex-shrink-0" />
+                    {(swap.to_user_id ?? swap.accepted_by) ? (
+                      <span className="text-sm text-[#F0EDE8] font-medium truncate">
+                        {userNameMap[swap.to_user_id ?? swap.accepted_by ?? ""] ?? "Unknown"}
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-0.5 bg-[#8B5CF6]/15 text-[#A78BFA] rounded-full whitespace-nowrap">
+                        Public
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-[#7A94AD] whitespace-nowrap flex-shrink-0">
+                    {swap.requested_at
+                      ? new Date(swap.requested_at).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : ""}
+                  </span>
+                </div>
+              ))}
+              {pendingCount > 3 && (
                 <Link
                   href="/manager/swaps"
-                  className="text-xs text-primary hover:underline"
+                  className="block text-center pt-2 text-xs text-[#7A94AD] hover:text-[#F0EDE8] transition-colors"
                 >
-                  View all
+                  +{pendingCount - 3} more · Go to Swap Requests →
                 </Link>
               )}
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {pendingSwaps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No swap requests pending approval.
-              </p>
-            ) : (
-              <>
-                <ul className="divide-y divide-border">
-                  {pendingSwaps.map((swap) => {
-                    const shiftDate = shiftDateMap[swap.shift_id];
-                    return (
-                      <li key={swap.id} className="py-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm">
-                            <span className="font-medium">
-                              {swapUserMap[swap.from_user_id] ?? "Unknown"}
-                            </span>
-                            <span className="text-muted-foreground"> → </span>
-                            {(swap.to_user_id ?? swap.accepted_by) ? (
-                              <span className="font-medium">
-                                {swapUserMap[swap.to_user_id ?? swap.accepted_by ?? ""] ?? "Unknown"}
-                              </span>
-                            ) : (
-                              <span className="font-medium text-violet-600 dark:text-violet-400">
-                                Public
-                              </span>
-                            )}
-                          </p>
-                          {shiftDate && (
-                            <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                              {fmtDate(shiftDate)}
-                            </span>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {pendingCount > 3 && (
-                  <div className="pt-3 mt-1 border-t border-border">
-                    <Link
-                      href="/manager/swaps"
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      +{pendingCount - 3} more · Go to Swap Requests →
-                    </Link>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
     </div>
   );

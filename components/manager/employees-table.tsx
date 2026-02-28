@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { deactivateEmployee } from "@/app/actions/manager";
@@ -47,21 +47,30 @@ function StatusBadge({ status }: { status: Status }) {
 
 function DeactivateButton({ employeeId }: { employeeId: string }) {
   const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   return (
-    <button
-      disabled={isPending}
-      onClick={() =>
-        startTransition(async () => {
-          await deactivateEmployee(employeeId);
-          router.refresh();
-        })
-      }
-      className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-    >
-      {isPending ? "…" : "Deactivate"}
-    </button>
+    <div className="inline-flex items-center gap-1">
+      {error && <span className="text-[10px] text-destructive">{error}</span>}
+      <button
+        disabled={isPending}
+        onClick={() =>
+          startTransition(async () => {
+            setError(null);
+            const result = await deactivateEmployee(employeeId);
+            if (result?.error) {
+              setError(result.error);
+            } else {
+              router.refresh();
+            }
+          })
+        }
+        className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+      >
+        {isPending ? "…" : "Deactivate"}
+      </button>
+    </div>
   );
 }
 

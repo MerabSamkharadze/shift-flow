@@ -30,7 +30,11 @@ export const getManagerEmployeesData = unstable_cache(
         .in("user_id", employeeIds);
 
       for (const m of memberships ?? []) {
-        const g = m.groups as { id: string; name: string; color: string } | null;
+        const g = m.groups as {
+          id: string;
+          name: string;
+          color: string;
+        } | null;
         if (!g) continue;
         const list = groupsByEmployee.get(m.user_id) ?? [];
         list.push(g);
@@ -67,7 +71,13 @@ export const getManagerGroupsList = unstable_cache(
       .eq("manager_id", managerId)
       .order("name");
 
-    return { groups: (groups ?? []).map((g) => ({ id: g.id, name: g.name, color: g.color })) };
+    return {
+      groups: (groups ?? []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        color: g.color,
+      })),
+    };
   },
   ["manager-groups-list"],
   { tags: ["manager-groups"], revalidate: 30 },
@@ -105,10 +115,7 @@ export const getOwnerDashboardData = unstable_cache(
         .select("id", { count: "exact", head: true })
         .eq("company_id", companyId)
         .eq("is_active", true),
-      service
-        .from("groups")
-        .select("id")
-        .eq("company_id", companyId),
+      service.from("groups").select("id").eq("company_id", companyId),
       service
         .from("users")
         .select(
@@ -158,28 +165,29 @@ export const getOwnerDashboardData = unstable_cache(
 
     const companyShiftIds = (companyShifts ?? []).map((s) => s.id);
 
-    const { data: pendingSwaps, count: pendingSwapCount } = companyShiftIds.length
-      ? await service
-          .from("shift_swaps")
-          .select(
-            "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
-            { count: "exact" },
-          )
-          .in("shift_id", companyShiftIds)
-          .in("status", ["accepted_by_employee", "pending_manager"])
-          .order("requested_at", { ascending: false })
-          .limit(5)
-      : {
-          data: [] as {
-            id: string;
-            shift_id: string;
-            from_user_id: string;
-            to_user_id: string | null;
-            accepted_by: string | null;
-            requested_at: string | null;
-          }[],
-          count: 0,
-        };
+    const { data: pendingSwaps, count: pendingSwapCount } =
+      companyShiftIds.length
+        ? await service
+            .from("shift_swaps")
+            .select(
+              "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
+              { count: "exact" },
+            )
+            .in("shift_id", companyShiftIds)
+            .in("status", ["accepted_by_employee", "pending_manager"])
+            .order("requested_at", { ascending: false })
+            .limit(5)
+        : {
+            data: [] as {
+              id: string;
+              shift_id: string;
+              from_user_id: string;
+              to_user_id: string | null;
+              accepted_by: string | null;
+              requested_at: string | null;
+            }[],
+            count: 0,
+          };
 
     // Layer 3: user names for swaps + activity
     const swapUserIds = [
@@ -256,6 +264,79 @@ export const getOwnerManagersData = unstable_cache(
   { tags: ["owner-managers"], revalidate: 30 },
 );
 
+// ─── Owner Branches (Groups) ──────────────────────────────────────────────────
+
+export const getOwnerBranchesData = unstable_cache(
+  async (companyId: string) => {
+    const service = createServiceClient();
+
+    // Get all groups for this company with manager info
+    const { data: groupsData } = await service
+      .from("groups")
+      .select("id, name, color, is_active, manager_id, created_at")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: false });
+
+    const groups = groupsData ?? [];
+    const groupIds = groups.map((g) => g.id);
+    const managerIds = [
+      ...new Set(groups.map((g) => g.manager_id).filter(Boolean)),
+    ];
+
+    // Get member counts per group and manager names
+    const [membersResult, managersResult] = await Promise.all([
+      groupIds.length
+        ? service
+            .from("group_members")
+            .select("group_id, user_id")
+            .in("group_id", groupIds)
+        : Promise.resolve({
+            data: [] as { group_id: string; user_id: string }[],
+          }),
+      managerIds.length
+        ? service
+            .from("users")
+            .select("id, first_name, last_name")
+            .in("id", managerIds)
+        : Promise.resolve({
+            data: [] as {
+              id: string;
+              first_name: string | null;
+              last_name: string | null;
+            }[],
+          }),
+    ]);
+
+    const memberCountMap = new Map<string, number>();
+    for (const m of membersResult.data ?? []) {
+      memberCountMap.set(m.group_id, (memberCountMap.get(m.group_id) ?? 0) + 1);
+    }
+
+    const managerNameMap = new Map<string, string>();
+    for (const u of managersResult.data ?? []) {
+      managerNameMap.set(
+        u.id,
+        `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim(),
+      );
+    }
+
+    const branches = groups.map((g) => ({
+      id: g.id,
+      name: g.name,
+      color: g.color,
+      isActive: g.is_active ?? true,
+      createdAt: g.created_at,
+      managerId: g.manager_id,
+      managerName: managerNameMap.get(g.manager_id) || "Unassigned",
+      employeeCount: memberCountMap.get(g.id) ?? 0,
+    }));
+
+    return { branches };
+  },
+  ["owner-branches"],
+  { tags: ["owner-branches", "manager-groups"], revalidate: 30 },
+);
+
 // ─── Manager Dashboard ────────────────────────────────────────────────────────
 
 export const getManagerDashboardData = unstable_cache(
@@ -297,7 +378,16 @@ export const getManagerDashboardData = unstable_cache(
           .from("shifts")
           .select("id, schedule_id, date, start_time, end_time, assigned_to")
           .in("schedule_id", scheduleIds)
-      : { data: [] as { id: string; schedule_id: string; date: string; start_time: string; end_time: string; assigned_to: string | null }[] };
+      : {
+          data: [] as {
+            id: string;
+            schedule_id: string;
+            date: string;
+            start_time: string;
+            end_time: string;
+            assigned_to: string | null;
+          }[],
+        };
 
     const allShiftIds = (allShifts ?? []).map((s) => s.id);
 
@@ -305,9 +395,12 @@ export const getManagerDashboardData = unstable_cache(
     const { data: pendingSwaps, count: pendingCount } = allShiftIds.length
       ? await service
           .from("shift_swaps")
-          .select("id, shift_id, from_user_id, to_user_id, accepted_by, requested_at", {
-            count: "exact",
-          })
+          .select(
+            "id, shift_id, from_user_id, to_user_id, accepted_by, requested_at",
+            {
+              count: "exact",
+            },
+          )
           .in("shift_id", allShiftIds)
           .in("status", ["accepted_by_employee", "pending_manager"])
           .order("requested_at", { ascending: false })
@@ -336,11 +429,17 @@ export const getManagerDashboardData = unstable_cache(
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
     // 5. User names
-    const todayUserIds = todayShifts.map((s) => s.assigned_to).filter(Boolean) as string[];
+    const todayUserIds = todayShifts
+      .map((s) => s.assigned_to)
+      .filter(Boolean) as string[];
     const swapUserIds = [
       ...(pendingSwaps ?? []).map((s) => s.from_user_id),
-      ...(pendingSwaps ?? []).map((s) => s.to_user_id).filter((id): id is string => id !== null),
-      ...(pendingSwaps ?? []).map((s) => s.accepted_by).filter((id): id is string => id !== null),
+      ...(pendingSwaps ?? [])
+        .map((s) => s.to_user_id)
+        .filter((id): id is string => id !== null),
+      ...(pendingSwaps ?? [])
+        .map((s) => s.accepted_by)
+        .filter((id): id is string => id !== null),
     ];
     const allNeededUserIds = [...new Set([...todayUserIds, ...swapUserIds])];
 
@@ -352,7 +451,10 @@ export const getManagerDashboardData = unstable_cache(
       : { data: [] as { id: string; first_name: string; last_name: string }[] };
 
     const userNameMap = Object.fromEntries(
-      (allNeededUsers ?? []).map((u) => [u.id, `${u.first_name} ${u.last_name}`]),
+      (allNeededUsers ?? []).map((u) => [
+        u.id,
+        `${u.first_name} ${u.last_name}`,
+      ]),
     );
 
     return {
@@ -501,28 +603,38 @@ export const getScheduleData = unstable_cache(
     }));
 
     if (groups.length === 0) {
-      return { groups: [], members: [], templates: [], schedule: null, shifts: [], prevScheduleExists: false };
+      return {
+        groups: [],
+        members: [],
+        templates: [],
+        schedule: null,
+        shifts: [],
+        prevScheduleExists: false,
+      };
     }
 
     // Templates + members + schedule (parallel)
-    const [{ data: templatesRaw }, { data: membersRaw }, { data: scheduleRaw }] =
-      await Promise.all([
-        service
-          .from("shift_templates")
-          .select("id, name, start_time, end_time, color")
-          .eq("group_id", selectedGroupId)
-          .order("start_time"),
-        service
-          .from("group_members")
-          .select("user_id, users(id, first_name, last_name)")
-          .eq("group_id", selectedGroupId),
-        service
-          .from("schedules")
-          .select("id, status")
-          .eq("group_id", selectedGroupId)
-          .eq("week_start_date", weekStart)
-          .maybeSingle(),
-      ]);
+    const [
+      { data: templatesRaw },
+      { data: membersRaw },
+      { data: scheduleRaw },
+    ] = await Promise.all([
+      service
+        .from("shift_templates")
+        .select("id, name, start_time, end_time, color")
+        .eq("group_id", selectedGroupId)
+        .order("start_time"),
+      service
+        .from("group_members")
+        .select("user_id, users(id, first_name, last_name)")
+        .eq("group_id", selectedGroupId),
+      service
+        .from("schedules")
+        .select("id, status")
+        .eq("group_id", selectedGroupId)
+        .eq("week_start_date", weekStart)
+        .maybeSingle(),
+    ]);
 
     const templates = (templatesRaw ?? []).map((t) => ({
       id: t.id,
@@ -552,19 +664,23 @@ export const getScheduleData = unstable_cache(
       schedule
         ? service
             .from("shifts")
-            .select("id, assigned_to, date, start_time, end_time, shift_template_id, notes, extra_hours, extra_hours_notes")
+            .select(
+              "id, assigned_to, date, start_time, end_time, shift_template_id, notes, extra_hours, extra_hours_notes",
+            )
             .eq("schedule_id", schedule.id)
-        : Promise.resolve({ data: [] as {
-            id: string;
-            assigned_to: string;
-            date: string;
-            start_time: string;
-            end_time: string;
-            shift_template_id: string | null;
-            notes: string | null;
-            extra_hours: number | null;
-            extra_hours_notes: string | null;
-          }[] }),
+        : Promise.resolve({
+            data: [] as {
+              id: string;
+              assigned_to: string;
+              date: string;
+              start_time: string;
+              end_time: string;
+              shift_template_id: string | null;
+              notes: string | null;
+              extra_hours: number | null;
+              extra_hours_notes: string | null;
+            }[],
+          }),
       service
         .from("schedules")
         .select("id")
@@ -647,8 +763,12 @@ export const getManagerSwapsData = unstable_cache(
     const userIds = [
       ...new Set([
         ...swaps.map((s) => s.from_user_id),
-        ...swaps.map((s) => s.to_user_id).filter((id): id is string => id !== null),
-        ...swaps.map((s) => s.accepted_by).filter((id): id is string => id !== null),
+        ...swaps
+          .map((s) => s.to_user_id)
+          .filter((id): id is string => id !== null),
+        ...swaps
+          .map((s) => s.accepted_by)
+          .filter((id): id is string => id !== null),
       ]),
     ];
 
@@ -662,10 +782,13 @@ export const getManagerSwapsData = unstable_cache(
     );
 
     const shiftMap = new Map(
-      (shifts ?? []).map((s) => ({
-        ...s,
-        groupId: (schedules ?? []).find((sc) => sc.id === s.schedule_id)?.group_id,
-      })).map((s) => [s.id, s]),
+      (shifts ?? [])
+        .map((s) => ({
+          ...s,
+          groupId: (schedules ?? []).find((sc) => sc.id === s.schedule_id)
+            ?.group_id,
+        }))
+        .map((s) => [s.id, s]),
     );
 
     const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]));
@@ -684,9 +807,10 @@ export const getManagerSwapsData = unstable_cache(
         shiftEnd: shift?.end_time ?? "",
         groupName: groupMap.get(groupId) ?? "",
         requesterName: userMap.get(s.from_user_id) ?? "Unknown",
-        recipientName: (s.to_user_id ?? s.accepted_by)
-          ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? "Unknown")
-          : null,
+        recipientName:
+          (s.to_user_id ?? s.accepted_by)
+            ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? "Unknown")
+            : null,
       };
     });
 
@@ -707,15 +831,14 @@ export const getEmployeeScheduleData = unstable_cache(
     const [{ data: shifts }, { data: myMemberships }] = await Promise.all([
       service
         .from("shifts")
-        .select("id, schedule_id, date, start_time, end_time, shift_template_id, shift_templates(color), extra_hours, extra_hours_notes")
+        .select(
+          "id, schedule_id, date, start_time, end_time, shift_template_id, shift_templates(color), extra_hours, extra_hours_notes",
+        )
         .eq("assigned_to", userId)
         .gte("date", weekStart)
         .lte("date", weekEnd)
         .order("start_time"),
-      service
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", userId),
+      service.from("group_members").select("group_id").eq("user_id", userId),
     ]);
 
     const scheduleIds = [...new Set((shifts ?? []).map((s) => s.schedule_id))];
@@ -723,30 +846,43 @@ export const getEmployeeScheduleData = unstable_cache(
     const myGroupIds = (myMemberships ?? []).map((m) => m.group_id);
 
     // 2. Schedules + active swaps + colleague members (parallel)
-    const [{ data: schedules }, { data: activeSwaps }, { data: allMemberRows }] =
-      await Promise.all([
-        scheduleIds.length
-          ? service
-              .from("schedules")
-              .select("id, group_id")
-              .in("id", scheduleIds)
-          : Promise.resolve({ data: [] as { id: string; group_id: string }[] }),
-        shiftIds.length
-          ? service
-              .from("shift_swaps")
-              .select("id, shift_id, status, type")
-              .eq("from_user_id", userId)
-              .in("shift_id", shiftIds)
-              .in("status", ["pending_employee", "accepted_by_employee", "pending_manager"])
-          : Promise.resolve({ data: [] as { id: string; shift_id: string; status: string; type: string }[] }),
-        myGroupIds.length
-          ? service
-              .from("group_members")
-              .select("user_id, group_id")
-              .in("group_id", myGroupIds)
-              .neq("user_id", userId)
-          : Promise.resolve({ data: [] as { user_id: string; group_id: string }[] }),
-      ]);
+    const [
+      { data: schedules },
+      { data: activeSwaps },
+      { data: allMemberRows },
+    ] = await Promise.all([
+      scheduleIds.length
+        ? service.from("schedules").select("id, group_id").in("id", scheduleIds)
+        : Promise.resolve({ data: [] as { id: string; group_id: string }[] }),
+      shiftIds.length
+        ? service
+            .from("shift_swaps")
+            .select("id, shift_id, status, type")
+            .eq("from_user_id", userId)
+            .in("shift_id", shiftIds)
+            .in("status", [
+              "pending_employee",
+              "accepted_by_employee",
+              "pending_manager",
+            ])
+        : Promise.resolve({
+            data: [] as {
+              id: string;
+              shift_id: string;
+              status: string;
+              type: string;
+            }[],
+          }),
+      myGroupIds.length
+        ? service
+            .from("group_members")
+            .select("user_id, group_id")
+            .in("group_id", myGroupIds)
+            .neq("user_id", userId)
+        : Promise.resolve({
+            data: [] as { user_id: string; group_id: string }[],
+          }),
+    ]);
 
     const groupIds = [...new Set((schedules ?? []).map((s) => s.group_id))];
     const colleagueIds = [
@@ -756,11 +892,10 @@ export const getEmployeeScheduleData = unstable_cache(
     // 3. Groups + colleague users (parallel)
     const [{ data: groups }, { data: colleagueUsers }] = await Promise.all([
       groupIds.length
-        ? service
-            .from("groups")
-            .select("id, name, color")
-            .in("id", groupIds)
-        : Promise.resolve({ data: [] as { id: string; name: string; color: string }[] }),
+        ? service.from("groups").select("id, name, color").in("id", groupIds)
+        : Promise.resolve({
+            data: [] as { id: string; name: string; color: string }[],
+          }),
       colleagueIds.length
         ? service
             .from("users")
@@ -768,7 +903,9 @@ export const getEmployeeScheduleData = unstable_cache(
             .in("id", colleagueIds)
             .eq("is_active", true)
             .order("first_name")
-        : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string }[] }),
+        : Promise.resolve({
+            data: [] as { id: string; first_name: string; last_name: string }[],
+          }),
     ]);
 
     // Build lookup maps
@@ -778,9 +915,7 @@ export const getEmployeeScheduleData = unstable_cache(
     const groupMap = new Map(
       (groups ?? []).map((g) => [g.id, { name: g.name, color: g.color }]),
     );
-    const swapMap = new Map(
-      (activeSwaps ?? []).map((s) => [s.shift_id, s]),
-    );
+    const swapMap = new Map((activeSwaps ?? []).map((s) => [s.shift_id, s]));
 
     const colleagueGroupsMap = new Map<string, string[]>();
     for (const m of allMemberRows ?? []) {
@@ -794,7 +929,9 @@ export const getEmployeeScheduleData = unstable_cache(
       const groupId = scheduleGroupMap.get(s.schedule_id) ?? "";
       const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
       const swap = swapMap.get(s.id);
-      const templateData = (s as unknown as { shift_templates: { color: string | null } | null }).shift_templates;
+      const templateData = (
+        s as unknown as { shift_templates: { color: string | null } | null }
+      ).shift_templates;
       const templateColor = templateData?.color ?? "#3b82f6";
       return {
         id: s.id,
@@ -840,13 +977,12 @@ export const getEmployeeSwapsData = unstable_cache(
       { data: publicSwapRows },
       { data: myClaimRows },
     ] = await Promise.all([
-      service
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", userId),
+      service.from("group_members").select("group_id").eq("user_id", userId),
       service
         .from("shift_swaps")
-        .select("id, shift_id, to_user_id, accepted_by, type, status, requested_at, manager_notes")
+        .select(
+          "id, shift_id, to_user_id, accepted_by, type, status, requested_at, manager_notes",
+        )
         .eq("from_user_id", userId)
         .order("requested_at", { ascending: false }),
       service
@@ -865,10 +1001,17 @@ export const getEmployeeSwapsData = unstable_cache(
         .order("requested_at", { ascending: false }),
       service
         .from("shift_swaps")
-        .select("id, shift_id, from_user_id, status, requested_at, manager_notes")
+        .select(
+          "id, shift_id, from_user_id, status, requested_at, manager_notes",
+        )
         .eq("accepted_by", userId)
         .eq("type", "public")
-        .in("status", ["accepted_by_employee", "pending_manager", "approved", "rejected_by_manager"])
+        .in("status", [
+          "accepted_by_employee",
+          "pending_manager",
+          "approved",
+          "rejected_by_manager",
+        ])
         .order("requested_at", { ascending: false }),
     ]);
 
@@ -889,7 +1032,15 @@ export const getEmployeeSwapsData = unstable_cache(
           .from("shifts")
           .select("id, schedule_id, date, start_time, end_time")
           .in("id", allShiftIds)
-      : { data: [] as { id: string; schedule_id: string; date: string; start_time: string; end_time: string }[] };
+      : {
+          data: [] as {
+            id: string;
+            schedule_id: string;
+            date: string;
+            start_time: string;
+            end_time: string;
+          }[],
+        };
 
     // 7. Schedule → group lookup
     const scheduleIds = [...new Set((shifts ?? []).map((s) => s.schedule_id))];
@@ -974,7 +1125,13 @@ export const getEmployeeSwapsData = unstable_cache(
     );
 
     // Assemble props
-    const emptyShift = { date: "", startTime: "", endTime: "", groupName: "", groupColor: "#6366f1" };
+    const emptyShift = {
+      date: "",
+      startTime: "",
+      endTime: "",
+      groupName: "",
+      groupColor: "#6366f1",
+    };
 
     const mySwaps = (mySwapRows ?? []).map((s) => {
       const shift = shiftMap.get(s.shift_id) ?? emptyShift;
@@ -988,9 +1145,10 @@ export const getEmployeeSwapsData = unstable_cache(
         shiftEnd: shift.endTime,
         groupName: shift.groupName,
         groupColor: shift.groupColor,
-        recipientName: (s.to_user_id ?? s.accepted_by)
-          ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? null)
-          : null,
+        recipientName:
+          (s.to_user_id ?? s.accepted_by)
+            ? (userMap.get(s.to_user_id ?? s.accepted_by ?? "") ?? null)
+            : null,
         managerNotes: s.manager_notes ?? null,
       };
     });
@@ -1076,10 +1234,7 @@ export const getTeamScheduleData = unstable_cache(
           .select("id, group_id")
           .in("group_id", myGroupIds)
           .in("status", ["published", "locked"]),
-        service
-          .from("groups")
-          .select("id, name, color")
-          .in("id", myGroupIds),
+        service.from("groups").select("id, name, color").in("id", myGroupIds),
       ]);
 
     const memberUserIds = [
@@ -1099,11 +1254,15 @@ export const getTeamScheduleData = unstable_cache(
             .in("id", memberUserIds)
             .eq("is_active", true)
             .order("first_name")
-        : Promise.resolve({ data: [] as { id: string; first_name: string; last_name: string }[] }),
+        : Promise.resolve({
+            data: [] as { id: string; first_name: string; last_name: string }[],
+          }),
       scheduleIds.length
         ? service
             .from("shifts")
-            .select("id, schedule_id, assigned_to, date, start_time, end_time, shift_template_id, shift_templates(color)")
+            .select(
+              "id, schedule_id, assigned_to, date, start_time, end_time, shift_template_id, shift_templates(color)",
+            )
             .in("schedule_id", scheduleIds)
             .gte("date", weekStart)
             .lte("date", weekEnd)
@@ -1136,7 +1295,9 @@ export const getTeamScheduleData = unstable_cache(
     const teamShifts = (shiftsData ?? []).map((s) => {
       const groupId = scheduleGroupMap.get(s.schedule_id) ?? "";
       const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
-      const templateData = (s as unknown as { shift_templates: { color: string | null } | null }).shift_templates;
+      const templateData = (
+        s as unknown as { shift_templates: { color: string | null } | null }
+      ).shift_templates;
       const templateColor = templateData?.color ?? "#3b82f6";
       return {
         id: s.id,

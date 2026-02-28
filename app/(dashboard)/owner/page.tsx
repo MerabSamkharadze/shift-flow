@@ -2,19 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSessionProfile } from "@/lib/auth";
 import { getOwnerDashboardData } from "@/lib/cache";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Users,
-  Briefcase,
-  LayoutGrid,
-  ArrowLeftRight,
-  Activity,
-  UserPlus,
-  ChevronRight,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import { MonthlyReportButton } from "@/components/owner/monthly-report-button";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -51,51 +38,31 @@ const ACTION_LABELS: Record<string, string> = {
   shift_updated: "updated a shift",
 };
 
-function formatActivity(action: string, actorName: string): string {
-  const label = ACTION_LABELS[action] ?? action.replace(/_/g, " ");
-  return `${actorName} ${label}`;
+const ACTION_ICONS: Record<string, { icon: string; color: string }> = {
+  swap_approved: { icon: "ri-swap-line", color: "#F5A623" },
+  swap_rejected: { icon: "ri-close-circle-line", color: "#E8604C" },
+  schedule_published: { icon: "ri-calendar-check-line", color: "#F5A623" },
+  schedule_locked: { icon: "ri-lock-line", color: "#7A94AD" },
+  schedule_archived: { icon: "ri-archive-line", color: "#7A94AD" },
+  employee_added: { icon: "ri-user-add-line", color: "#4ECBA0" },
+  manager_invited: { icon: "ri-user-star-line", color: "#F5A623" },
+  manager_deactivated: { icon: "ri-user-unfollow-line", color: "#E8604C" },
+  group_created: { icon: "ri-group-line", color: "#4ECBA0" },
+  group_updated: { icon: "ri-edit-line", color: "#7A94AD" },
+  shift_updated: { icon: "ri-time-line", color: "#14B8A6" },
+};
+
+function getActionMeta(action: string) {
+  return ACTION_ICONS[action] ?? { icon: "ri-flashlight-line", color: "#7A94AD" };
 }
 
-// ─── Sub-components ────────────────────────────────────────────────────────────
-
-function Avatar({ name, size = "sm" }: { name: string; size?: "sm" | "md" }) {
-  const initials = name
+function getInitials(name: string) {
+  return name
     .split(" ")
     .map((n) => n[0] ?? "")
     .join("")
     .slice(0, 2)
     .toUpperCase();
-  return (
-    <div
-      className={cn(
-        "shrink-0 rounded-full bg-primary/10 flex items-center justify-center font-semibold text-primary",
-        size === "sm" ? "w-7 h-7 text-[10px]" : "w-9 h-9 text-xs",
-      )}
-    >
-      {initials || "?"}
-    </div>
-  );
-}
-
-type ManagerStatus = "active" | "pending" | "inactive";
-
-function StatusBadge({ status }: { status: ManagerStatus }) {
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        status === "active" &&
-          "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-400",
-        status === "pending" &&
-          "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-400",
-        status === "inactive" && "text-muted-foreground",
-      )}
-    >
-      {status === "active" && "Active"}
-      {status === "pending" && "Invite pending"}
-      {status === "inactive" && "Inactive"}
-    </Badge>
-  );
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -105,7 +72,6 @@ export default async function OwnerDashboardPage() {
   if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "owner") redirect(`/${profile.role}`);
 
-  // ── Cached data fetch ───────────────────────────────────────────────────────
   const {
     managerCount,
     employeeCount,
@@ -117,291 +83,274 @@ export default async function OwnerDashboardPage() {
     userNameMap,
   } = await getOwnerDashboardData(profile.company_id);
 
-  // ── Stats ──────────────────────────────────────────────────────────────────
   const stats = [
     {
-      label: "Total Employees",
+      label: "Active Employees",
       value: employeeCount,
-      icon: Users,
-      href: null,
+      icon: "ri-user-line",
+      iconBg: "bg-[#4ECBA0]/10",
+      iconColor: "text-[#4ECBA0]",
+      trend: null,
     },
     {
       label: "Active Managers",
       value: managerCount,
-      icon: Briefcase,
-      href: "/owner/managers",
+      icon: "ri-user-star-line",
+      iconBg: "bg-[#F5A623]/10",
+      iconColor: "text-[#F5A623]",
+      trend: null,
     },
     {
       label: "Active Groups",
       value: groupCount,
-      icon: LayoutGrid,
-      href: null,
+      icon: "ri-group-line",
+      iconBg: "bg-[#14B8A6]/10",
+      iconColor: "text-[#14B8A6]",
+      trend: null,
     },
     {
       label: "Pending Swaps",
       value: pendingSwapCount,
-      icon: ArrowLeftRight,
-      href: null,
+      icon: "ri-swap-line",
+      iconBg: "bg-[#F5A623]/10",
+      iconColor: "text-[#F5A623]",
+      badge: pendingSwapCount > 0 ? "Action needed" : null,
     },
   ];
 
-  // ─── Quick access links ────────────────────────────────────────────────────
-  const quickLinks = [
-    {
-      label: "Manage Managers",
-      description: "Invite, activate or deactivate managers",
-      href: "/owner/managers",
-      icon: Briefcase,
-    },
-    {
-      label: "Add Manager",
-      description: "Invite a new manager to the company",
-      href: "/owner/managers",
-      icon: UserPlus,
-    },
-  ];
-
-  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-8">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">
-            Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
-          </h1>
-        </div>
-        <MonthlyReportButton />
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1
+          className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
+          style={{ fontFamily: "Syne, sans-serif" }}
+        >
+          Dashboard
+        </h1>
+        <p className="text-sm md:text-base text-[#7A94AD]">
+          Overview of your company operations
+        </p>
       </div>
 
-      {/* ── Stats ─────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map(({ label, value, icon: Icon, href }) => (
-          <Card key={label}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {label}
-                </CardTitle>
-                <Icon size={16} className="text-muted-foreground" />
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        {stats.map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-5 hover:bg-[#1A2E45] transition-all duration-200 hover:scale-[1.02] cursor-default"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div
+                className={`w-9 h-9 md:w-10 md:h-10 rounded-lg ${stat.iconBg} flex items-center justify-center`}
+              >
+                <i className={`${stat.icon} text-lg md:text-xl ${stat.iconColor}`} />
               </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold tabular-nums">{value}</p>
-              {href && (
-                <Link
-                  href={href}
-                  className="text-xs text-primary hover:underline mt-1 inline-block"
-                >
-                  View all →
-                </Link>
+              {"badge" in stat && stat.badge && (
+                <span className="bg-[#F5A623] text-[#0A1628] text-[10px] md:text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap">
+                  {stat.badge}
+                </span>
               )}
-            </CardContent>
-          </Card>
+            </div>
+            <div
+              className="text-3xl md:text-4xl font-semibold text-[#F0EDE8] mb-1"
+              style={{ fontFamily: "JetBrains Mono, monospace" }}
+            >
+              {stat.value}
+            </div>
+            <div className="text-xs md:text-sm text-[#7A94AD]">{stat.label}</div>
+          </div>
         ))}
       </div>
 
-      {/* ── Managers + Pending Swaps ───────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Manager list */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">
-                Managers
-              </CardTitle>
-              <Link
-                href="/owner/managers"
-                className="text-xs text-primary hover:underline flex items-center gap-0.5"
-              >
-                Manage <ChevronRight size={12} />
-              </Link>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {managers.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No managers yet.
-              </p>
-            ) : (
-              <div className="rounded-lg border border-border overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/40">
-                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs">
-                        Name
-                      </th>
-                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs hidden sm:table-cell">
-                        Email
-                      </th>
-                      <th className="text-left font-medium text-muted-foreground px-3 py-2 text-xs">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {managers.map((m, i) => (
-                      <tr
-                        key={m.id}
-                        className={cn(
-                          "transition-colors hover:bg-muted/30",
-                          i !== managers.length - 1 && "border-b border-border",
-                        )}
-                      >
-                        <td className="px-3 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <Avatar name={`${m.first_name} ${m.last_name}`} />
-                            <span className="font-medium text-sm truncate max-w-[100px]">
-                              {m.first_name} {m.last_name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-muted-foreground text-xs truncate max-w-[140px] hidden sm:table-cell">
-                          {m.email}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <StatusBadge status={m.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      {/* Managers + Activity Feed */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-4 md:gap-6">
+        {/* Managers Table */}
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-semibold text-[#F0EDE8]">
+              Managers
+            </h2>
+            <Link
+              href="/owner/managers"
+              className="text-xs md:text-sm text-[#F5A623] hover:text-[#E09415] transition-colors whitespace-nowrap"
+            >
+              View all <i className="ri-arrow-right-line" />
+            </Link>
+          </div>
 
-        {/* Pending swaps */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">
-              Pending Swap Approvals
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {pendingSwaps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No swap requests pending approval.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {pendingSwaps.map((swap) => {
-                  const recipientId = swap.to_user_id ?? swap.accepted_by;
-                  return (
-                    <li key={swap.id} className="py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm">
-                          <span className="font-medium">
-                            {userNameMap[swap.from_user_id] ?? "Unknown"}
-                          </span>
-                          <span className="text-muted-foreground"> → </span>
-                          {recipientId ? (
-                            <span className="font-medium">
-                              {userNameMap[recipientId] ?? "Unknown"}
-                            </span>
-                          ) : (
-                            <span className="font-medium text-violet-600 dark:text-violet-400">
-                              Public
-                            </span>
-                          )}
-                        </p>
-                        {swap.requested_at && (
-                          <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                            {fmtDate(swap.requested_at)}
-                          </span>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {pendingSwapCount > 5 && (
-              <p className="text-xs text-muted-foreground mt-3 pt-3 border-t border-border">
-                +{pendingSwapCount - 5} more pending across the company
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          {managers.length === 0 ? (
+            <p className="text-sm text-[#7A94AD] py-6 text-center">
+              No managers yet.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {managers.map((m) => {
+                const name = `${m.first_name} ${m.last_name}`.trim();
+                const statusColor =
+                  m.status === "active"
+                    ? "#4ECBA0"
+                    : m.status === "pending"
+                      ? "#F5A623"
+                      : "#7A94AD";
+                const statusLabel =
+                  m.status === "active"
+                    ? "Active"
+                    : m.status === "pending"
+                      ? "Invite pending"
+                      : "Inactive";
 
-      {/* ── Activity Feed + Quick Access ───────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Activity size={15} className="text-muted-foreground" />
-              <CardTitle className="text-base font-semibold">
-                Recent Activity
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {activityLogs.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-6 text-center">
-                No activity recorded yet.
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {activityLogs.map((log) => {
-                  const actorName = userNameMap[log.user_id] ?? "Someone";
-                  return (
-                    <li key={log.id} className="flex items-start gap-3">
-                      <Avatar name={actorName} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm leading-snug">
-                          {formatActivity(log.action, actorName)}
-                        </p>
-                        {log.entity_type && (
-                          <p className="text-xs text-muted-foreground mt-0.5 capitalize">
-                            {log.entity_type.replace(/_/g, " ")}
-                          </p>
-                        )}
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/[0.03] transition-all"
+                  >
+                    <div
+                      className="w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                      style={{
+                        backgroundColor: statusColor + "20",
+                        color: statusColor,
+                      }}
+                    >
+                      {getInitials(name)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[#F0EDE8] truncate">
+                        {name}
                       </div>
-                      <span className="text-[11px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
+                      <div className="text-xs text-[#7A94AD] truncate">{m.email}</div>
+                    </div>
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                      style={{
+                        backgroundColor: statusColor + "20",
+                        color: statusColor,
+                      }}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Activity Feed */}
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-6">
+          <h2 className="text-base md:text-lg font-semibold text-[#F0EDE8] mb-4">
+            Activity Feed
+          </h2>
+
+          {activityLogs.length === 0 ? (
+            <p className="text-sm text-[#7A94AD] py-6 text-center">
+              No activity recorded yet.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {activityLogs.map((log) => {
+                const actorName = userNameMap[log.user_id] ?? "Someone";
+                const label =
+                  ACTION_LABELS[log.action] ?? log.action.replace(/_/g, " ");
+                const meta = getActionMeta(log.action);
+
+                return (
+                  <div
+                    key={log.id}
+                    className="flex items-start gap-3 p-3 rounded-lg hover:bg-white/[0.03] transition-all"
+                  >
+                    <div
+                      className="w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                      style={{
+                        backgroundColor: meta.color + "20",
+                        color: meta.color,
+                      }}
+                    >
+                      {getInitials(actorName)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs md:text-sm text-[#F0EDE8]">
+                        <span className="font-medium">{actorName}</span>
+                        <span className="text-[#7A94AD]"> {label}</span>
+                      </div>
+                      <div className="text-[10px] md:text-xs text-[#7A94AD] mt-0.5">
                         {fmtRelative(log.created_at)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Quick Access */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">
-              Quick Access
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-2">
-            {quickLinks.map(({ label, description, href, icon: Icon }) => (
-              <Link
-                key={label}
-                href={href}
-                className="flex items-center gap-4 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-muted/50 hover:border-border/80 group"
-              >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-                  <Icon size={16} className="text-primary" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{label}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {description}
-                  </p>
-                </div>
-                <ChevronRight
-                  size={16}
-                  className="text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0"
-                />
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
+                      </div>
+                    </div>
+                    <i
+                      className={`${meta.icon} text-base md:text-lg flex-shrink-0`}
+                      style={{ color: meta.color }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Pending Swap Approvals */}
+      {pendingSwapCount > 0 && (
+        <div className="bg-[#142236] border border-white/[0.07] rounded-xl p-4 md:p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base md:text-lg font-semibold text-[#F0EDE8]">
+              Pending Swap Approvals
+            </h2>
+            <span
+              className="bg-[#F5A623] text-[#0A1628] text-xs font-bold px-2.5 py-1 rounded-full"
+              style={{ fontFamily: "JetBrains Mono, monospace" }}
+            >
+              {pendingSwapCount}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {pendingSwaps.map((swap) => {
+              const fromName = userNameMap[swap.from_user_id] ?? "Unknown";
+              const recipientId = swap.to_user_id ?? swap.accepted_by;
+              const toName = recipientId
+                ? (userNameMap[recipientId] ?? "Unknown")
+                : "Public";
+
+              return (
+                <div
+                  key={swap.id}
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/[0.03] transition-all"
+                >
+                  <div className="w-9 h-9 rounded-full bg-[#F5A623]/20 flex items-center justify-center flex-shrink-0">
+                    <i className="ri-swap-line text-[#F5A623]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-[#F0EDE8]">
+                      <span className="font-medium">{fromName}</span>
+                      <span className="text-[#7A94AD]"> → </span>
+                      <span
+                        className={`font-medium ${!recipientId ? "text-[#14B8A6]" : ""}`}
+                      >
+                        {toName}
+                      </span>
+                    </div>
+                    {swap.requested_at && (
+                      <div className="text-[10px] md:text-xs text-[#7A94AD] mt-0.5">
+                        {fmtDate(swap.requested_at)}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs bg-[#F5A623]/10 text-[#F5A623] px-2 py-0.5 rounded-full font-medium flex-shrink-0">
+                    Pending
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {pendingSwapCount > 5 && (
+            <p className="text-xs text-[#7A94AD] mt-3 pt-3 border-t border-white/[0.07]">
+              +{pendingSwapCount - 5} more pending across the company
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

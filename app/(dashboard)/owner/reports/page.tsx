@@ -7,16 +7,15 @@ import { MonthSelector } from "@/components/owner/month-selector";
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>;
+  searchParams: { month?: string };
 }) {
   const { user, profile } = await getSessionProfile();
   if (!user || !profile) redirect("/auth/login");
   if (profile.role !== "owner") redirect("/owner");
 
-  const params = await searchParams;
   const now = new Date();
   const currentMonth =
-    params.month ??
+    searchParams.month ??
     `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const { employees, totalHours, totalOvertime, employeeCount } =

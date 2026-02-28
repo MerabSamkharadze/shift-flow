@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useTransition, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { deactivateManager } from "@/app/actions/owner";
 
@@ -51,11 +51,17 @@ function fmtDate(d: string) {
 function DeactivateButton({ managerId, managerName }: { managerId: string; managerName: string }) {
   const [isPending, startTransition] = useTransition();
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleDeactivate = () => {
+    setError(null);
     startTransition(async () => {
-      await deactivateManager(managerId);
+      const result = await deactivateManager(managerId);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
       setShowConfirm(false);
       router.refresh();
     });
@@ -90,6 +96,12 @@ function DeactivateButton({ managerId, managerName }: { managerId: string; manag
             <p className="text-sm text-[#7A94AD] mb-5">
               Are you sure you want to deactivate <span className="text-[#F0EDE8] font-medium">{managerName}</span>?
             </p>
+            {error && (
+              <div className="flex items-center gap-2 p-2.5 mb-4 bg-[#E8604C]/10 rounded-lg border border-[#E8604C]/20 text-left">
+                <i className="ri-error-warning-line text-[#E8604C] flex-shrink-0" />
+                <span className="text-xs text-[#E8604C]">{error}</span>
+              </div>
+            )}
             <div className="flex gap-3">
               <button
                 onClick={() => setShowConfirm(false)}
@@ -120,20 +132,20 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
   const [activeFilter, setActiveFilter] = useState<"all" | Status>("all");
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null);
 
-  const managersWithStatus = managers.map((m, i) => ({
+  const managersWithStatus = useMemo(() => managers.map((m, i) => ({
     ...m,
     status: getStatus(m),
     color: getColor(i),
     initials: getInitials(m.first_name, m.last_name),
     name: `${m.first_name} ${m.last_name}`.trim(),
-  }));
+  })), [managers]);
 
-  const counts = {
+  const counts = useMemo(() => ({
     all: managersWithStatus.length,
     active: managersWithStatus.filter((m) => m.status === "active").length,
     pending: managersWithStatus.filter((m) => m.status === "pending").length,
     inactive: managersWithStatus.filter((m) => m.status === "inactive").length,
-  };
+  }), [managersWithStatus]);
 
   const filters: { id: "all" | Status; label: string }[] = [
     { id: "all", label: "All" },
@@ -142,13 +154,13 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
     { id: "inactive", label: "Inactive" },
   ];
 
-  const filtered = managersWithStatus.filter((m) => {
+  const filtered = useMemo(() => managersWithStatus.filter((m) => {
     const matchSearch =
       m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.email.toLowerCase().includes(searchQuery.toLowerCase());
     const matchFilter = activeFilter === "all" || m.status === activeFilter;
     return matchSearch && matchFilter;
-  });
+  }), [managersWithStatus, searchQuery, activeFilter]);
 
   const selected = selectedManager
     ? managersWithStatus.find((m) => m.id === selectedManager.id) ?? null

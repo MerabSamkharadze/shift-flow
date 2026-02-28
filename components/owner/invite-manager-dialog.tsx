@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { inviteManager } from "@/app/actions/owner";
 
@@ -10,7 +10,9 @@ export function InviteManagerDialog() {
   const [sent, setSent] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [showToast, setShowToast] = useState(false);
+  const [toastName, setToastName] = useState("");
   const router = useRouter();
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -29,6 +31,12 @@ export function InviteManagerDialog() {
     resetForm();
   };
 
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -43,10 +51,11 @@ export function InviteManagerDialog() {
       if (result.error) {
         setError(result.error);
       } else {
+        setToastName(`${formData.firstName} ${formData.lastName}`.trim());
         setSent(true);
         setShowToast(true);
         router.refresh();
-        setTimeout(() => {
+        closeTimerRef.current = setTimeout(() => {
           handleClose();
         }, 1500);
       }
@@ -234,7 +243,7 @@ export function InviteManagerDialog() {
             <i className="ri-check-line text-[#4ECBA0]" />
           </div>
           <span className="text-xs md:text-sm text-[#F0EDE8]">
-            Invite sent to {formData.firstName} {formData.lastName}
+            Invite sent to {toastName}
           </span>
         </div>
       )}

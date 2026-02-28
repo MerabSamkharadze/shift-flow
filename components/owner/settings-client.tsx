@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect } from "react";
 import { updateCompanyName, updateOwnerProfile } from "@/app/actions/owner";
 
 type Props = {
@@ -37,6 +37,14 @@ export function SettingsClient({ company, owner }: Props) {
   const [lastName, setLastName] = useState(owner.last_name ?? "");
   const [phone, setPhone] = useState(owner.phone ?? "");
 
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   // Toggles (UI-only, no DB backing yet)
   const [allowSwaps, setAllowSwaps] = useState(true);
   const [notifSwaps, setNotifSwaps] = useState(true);
@@ -71,7 +79,7 @@ export function SettingsClient({ company, owner }: Props) {
       }
 
       setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      successTimerRef.current = setTimeout(() => setSuccess(false), 3000);
     });
   };
 

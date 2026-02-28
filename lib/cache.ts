@@ -389,7 +389,10 @@ export const getOwnerBranchesData = unstable_cache(
 function shiftHours(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
+  let endMinutes = eh * 60 + em;
+  const startMinutes = sh * 60 + sm;
+  if (endMinutes < startMinutes) endMinutes += 24 * 60; // overnight shift
+  return Math.max(0, (endMinutes - startMinutes) / 60);
 }
 
 export const getOwnerMonthlyReportData = unstable_cache(

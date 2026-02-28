@@ -2096,7 +2096,7 @@ export default function ScheduleBuilder() {
           <label className="block text-sm font-medium text-[#7A94AD] mb-2">Employee</label>
           <div className="flex items-center gap-3 p-3 bg-[#0A1628] rounded-lg">
             {(() => {
-              const emp = employees.find(e => e.id === selectedCell.employee);
+              const emp = employees.find(e => e.id === selectedCell?.employee);
               return (
                 <>
                   <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${emp?.color} flex items-center justify-center text-white text-xs font-semibold flex-shrink-0`}>
@@ -2113,7 +2113,7 @@ export default function ScheduleBuilder() {
           <label className="block text-sm font-medium text-[#7A94AD] mb-2">Date</label>
           <input
             type="text"
-            value={selectedCell.day}
+            value={selectedCell?.day ?? ""}
             readOnly
             className="w-full px-3 md:px-4 py-2 md:py-2.5 bg-[#0A1628] border border-white/[0.07] rounded-lg text-[#F0EDE8] text-sm"
           />

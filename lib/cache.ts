@@ -83,6 +83,26 @@ export const getManagerGroupsList = unstable_cache(
   { tags: ["manager-groups"], revalidate: 30 },
 );
 
+// ─── Owner Settings ──────────────────────────────────────────────────────────
+
+export const getOwnerSettingsData = unstable_cache(
+  async (companyId: string, userId: string) => {
+    const service = createServiceClient();
+
+    const [{ data: company }, { data: ownerProfile }] = await Promise.all([
+      service.from("companies").select("id, name, created_at").eq("id", companyId).single(),
+      service.from("users").select("id, first_name, last_name, email, phone").eq("id", userId).single(),
+    ]);
+
+    return {
+      company: company ?? { id: companyId, name: "", created_at: "" },
+      owner: ownerProfile ?? { id: userId, first_name: "", last_name: "", email: "", phone: null },
+    };
+  },
+  ["owner-settings"],
+  { tags: ["owner-settings"], revalidate: 60 },
+);
+
 // ─── Owner Dashboard ──────────────────────────────────────────────────────────
 
 export const getOwnerDashboardData = unstable_cache(

@@ -80,6 +80,56 @@ export async function inviteManager(formData: FormData) {
   }
 }
 
+export async function updateCompanyName(name: string) {
+  try {
+    const { profile } = await getOwnerProfile();
+    const service = createServiceClient();
+
+    const trimmed = name.trim();
+    if (!trimmed) return { error: "Company name is required" };
+
+    const { error } = await service
+      .from("companies")
+      .update({ name: trimmed })
+      .eq("id", profile.company_id);
+
+    if (error) return { error: error.message };
+
+    revalidateTag("owner-dashboard");
+    revalidateTag("owner-settings");
+    return { error: null };
+  } catch {
+    return { error: "Something went wrong" };
+  }
+}
+
+export async function updateOwnerProfile(formData: FormData) {
+  try {
+    const { supabase, profile } = await getOwnerProfile();
+
+    const firstName = (formData.get("first_name") as string)?.trim();
+    const lastName = (formData.get("last_name") as string)?.trim();
+    const phone = (formData.get("phone") as string)?.trim() || null;
+
+    if (!firstName || !lastName) {
+      return { error: "First and last name are required" };
+    }
+
+    const { error } = await supabase
+      .from("users")
+      .update({ first_name: firstName, last_name: lastName, phone })
+      .eq("id", profile.id);
+
+    if (error) return { error: error.message };
+
+    revalidateTag("owner-settings");
+    revalidateTag("owner-dashboard");
+    return { error: null };
+  } catch {
+    return { error: "Something went wrong" };
+  }
+}
+
 export async function deactivateManager(managerId: string) {
   try {
     const { profile } = await getOwnerProfile();

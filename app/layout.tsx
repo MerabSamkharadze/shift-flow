@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import NextTopLoader from "nextjs-toploader";
 import { Providers } from "@/components/providers";
 import "./globals.css";
@@ -14,9 +14,16 @@ export const metadata: Metadata = {
   description: "Shift management platform",
 };
 
-const inter = Inter({
+const dmSans = DM_Sans({
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-dm-sans",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-jetbrains-mono",
 });
 
 export default function RootLayout({
@@ -26,9 +33,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased`}>
+      <head>
+        {/* Remixicon */}
+        <link
+          href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css"
+          rel="stylesheet"
+        />
+        {/* Syne font (headings) */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className={`${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <NextTopLoader
-          color="#3b82f6"
+          color="#F5A623"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}

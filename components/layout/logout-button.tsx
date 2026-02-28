@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
 
 export function LogoutButton() {
   const [loading, setLoading] = useState(false);
@@ -14,7 +12,6 @@ export function LogoutButton() {
     setLoading(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    // Clear the role cookie
     document.cookie = "sf-role=; path=/; max-age=0";
     router.push("/auth/login");
   };
@@ -23,14 +20,14 @@ export function LogoutButton() {
     <button
       onClick={handleLogout}
       disabled={loading}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-        "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-        loading && "opacity-50 cursor-not-allowed",
-      )}
+      className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm text-[#F0EDE8] hover:bg-[#E8604C]/10 hover:text-[#E8604C] transition-all duration-150 ${
+        loading ? "opacity-50 scale-95 cursor-not-allowed" : ""
+      }`}
+      style={{ fontFamily: "DM Sans, sans-serif" }}
+      aria-label="Logout"
     >
-      <LogOut size={16} strokeWidth={2} />
-      {loading ? "Signing out..." : "Sign out"}
+      <i className={`ri-logout-box-line text-lg ${loading ? "animate-spin" : ""}`} />
+      <span>{loading ? "Logging out..." : "Logout"}</span>
     </button>
   );
 }

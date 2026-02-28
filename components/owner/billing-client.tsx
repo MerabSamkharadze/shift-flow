@@ -75,7 +75,7 @@ export function BillingClient({ activatedAt, isPaid }: Props) {
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className="text-lg md:text-xl font-semibold text-[#F0EDE8]"
-                  style={{ fontFamily: "Syne, sans-serif" }}
+                  style={{ fontFamily: "var(--font-syne), sans-serif" }}
                 >
                   ShiftFlow Pro
                 </span>
@@ -161,7 +161,7 @@ export function BillingClient({ activatedAt, isPaid }: Props) {
           </div>
           <div
             className="text-lg md:text-xl font-semibold text-[#F0EDE8] mb-1"
-            style={{ fontFamily: "Syne, sans-serif" }}
+            style={{ fontFamily: "var(--font-syne), sans-serif" }}
           >
             Pro
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 type Employee = {
   name: string;
@@ -36,8 +36,14 @@ export function MonthlyReportClient({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const maxHours = Math.max(...employees.map((e) => e.totalHours), 1);
-  const avgHours = employeeCount > 0 ? Math.round(totalHours / employeeCount) : 0;
+  const maxHours = useMemo(
+    () => Math.max(...employees.map((e) => e.totalHours), 1),
+    [employees],
+  );
+  const avgHours = useMemo(
+    () => (employeeCount > 0 ? Math.round(totalHours / employeeCount) : 0),
+    [employeeCount, totalHours],
+  );
 
   const handleExport = async () => {
     setLoading(true);

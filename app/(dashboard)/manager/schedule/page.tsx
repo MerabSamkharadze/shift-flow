@@ -39,7 +39,7 @@ export default async function SchedulePage({
         <div>
           <h1
             className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
-            style={{ fontFamily: "Syne, sans-serif" }}
+            style={{ fontFamily: "var(--font-syne), sans-serif" }}
           >
             Schedule Builder
           </h1>
@@ -78,7 +78,7 @@ export default async function SchedulePage({
       <div>
         <h1
           className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
-          style={{ fontFamily: "Syne, sans-serif" }}
+          style={{ fontFamily: "var(--font-syne), sans-serif" }}
         >
           Schedule Builder
         </h1>

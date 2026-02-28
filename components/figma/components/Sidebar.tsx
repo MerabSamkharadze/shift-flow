@@ -57,7 +57,7 @@ export default function Sidebar({ activeView, setActiveView, sidebarOpen, setSid
             <i className="ri-calendar-check-line text-xl text-[#0A1628]"></i>
           </div>
           <div>
-            <h1 className="text-[#F0EDE8] font-bold text-lg" style={{ fontFamily: 'Syne, sans-serif' }}>ShiftFlow</h1>
+            <h1 className="text-[#F0EDE8] font-bold text-lg" style={{ fontFamily: 'var(--font-syne), sans-serif' }}>ShiftFlow</h1>
             <p className="text-[#7A94AD] text-xs">Workforce Manager</p>
           </div>
         </div>

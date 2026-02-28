@@ -52,7 +52,7 @@ export default async function ManagerDashboardPage() {
       <div>
         <h1
           className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
-          style={{ fontFamily: "Syne, sans-serif" }}
+          style={{ fontFamily: "var(--font-syne), sans-serif" }}
         >
           Welcome back{profile.first_name ? `, ${profile.first_name}` : ""}
         </h1>

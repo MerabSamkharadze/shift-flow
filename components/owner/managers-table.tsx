@@ -90,7 +90,7 @@ function DeactivateButton({ managerId, managerName }: { managerId: string; manag
             <div className="w-14 h-14 rounded-full bg-[#E8604C]/10 flex items-center justify-center mx-auto mb-4">
               <i className="ri-error-warning-line text-2xl text-[#E8604C]" />
             </div>
-            <h3 className="text-lg font-semibold text-[#F0EDE8] mb-2" style={{ fontFamily: "Syne, sans-serif" }}>
+            <h3 className="text-lg font-semibold text-[#F0EDE8] mb-2" style={{ fontFamily: "var(--font-syne), sans-serif" }}>
               Deactivate Manager?
             </h3>
             <p className="text-sm text-[#7A94AD] mb-5">
@@ -339,7 +339,7 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
               >
                 {selected.initials}
               </div>
-              <h2 className="text-xl font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: "Syne, sans-serif" }}>
+              <h2 className="text-xl font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: "var(--font-syne), sans-serif" }}>
                 {selected.name}
               </h2>
               <p className="text-sm text-[#7A94AD] mb-3">Manager</p>

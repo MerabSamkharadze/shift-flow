@@ -43,7 +43,7 @@ export function Sidebar({ role, firstName, lastName }: Props) {
           <div>
             <h1
               className="text-[#F0EDE8] font-bold text-lg"
-              style={{ fontFamily: "Syne, sans-serif" }}
+              style={{ fontFamily: "var(--font-syne), sans-serif" }}
             >
               ShiftFlow
             </h1>

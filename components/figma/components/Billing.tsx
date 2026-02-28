@@ -120,7 +120,7 @@ export default function Billing() {
             </div>
             <span className="bg-[#F5A623] text-[#0A1628] text-[10px] md:text-xs font-semibold px-2 py-1 rounded-full whitespace-nowrap">Active</span>
           </div>
-          <div className="text-lg md:text-xl font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>{activePlan.name}</div>
+          <div className="text-lg md:text-xl font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: 'var(--font-syne), sans-serif' }}>{activePlan.name}</div>
           <div className="text-xs md:text-sm text-[#7A94AD]">Current Plan</div>
         </div>
 
@@ -175,7 +175,7 @@ export default function Billing() {
             </div>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-lg font-semibold text-[#F0EDE8]" style={{ fontFamily: 'Syne, sans-serif' }}>Professional</span>
+                <span className="text-lg font-semibold text-[#F0EDE8]" style={{ fontFamily: 'var(--font-syne), sans-serif' }}>Professional</span>
                 <span className="bg-[#4ECBA0]/15 text-[#4ECBA0] text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">ACTIVE</span>
               </div>
               <p className="text-sm text-[#7A94AD] mt-0.5">Billed monthly · Renews Feb 15, 2025</p>
@@ -429,7 +429,7 @@ export default function Billing() {
                         <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-[#F5A623] text-[#0A1628] text-[10px] font-bold px-3 py-0.5 rounded-full whitespace-nowrap">POPULAR</span>
                       )}
                       <div className="text-center mb-4">
-                        <h3 className="text-base font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: 'Syne, sans-serif' }}>{plan.name}</h3>
+                        <h3 className="text-base font-semibold text-[#F0EDE8] mb-1" style={{ fontFamily: 'var(--font-syne), sans-serif' }}>{plan.name}</h3>
                         <div className="font-['JetBrains_Mono'] text-2xl font-bold text-[#F0EDE8]">
                           {getPriceLabel(plan.price)}
                         </div>

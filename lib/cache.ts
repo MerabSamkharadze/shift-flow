@@ -541,21 +541,21 @@ export const getOwnerHoursSummaryData = unstable_cache(
       if (weekNum > 6) break; // safety
     }
 
-    // Get schedules in range
-    const { data: schedules } = await service
-      .from("schedules")
-      .select("id, group_id")
-      .eq("company_id", companyId)
-      .lte("week_start_date", monthEnd)
-      .gte("week_end_date", monthStart);
+    // Get schedules + groups in parallel (independent queries)
+    const [{ data: schedules }, { data: groups }] = await Promise.all([
+      service
+        .from("schedules")
+        .select("id, group_id")
+        .eq("company_id", companyId)
+        .lte("week_start_date", monthEnd)
+        .gte("week_end_date", monthStart),
+      service
+        .from("groups")
+        .select("id, name")
+        .eq("company_id", companyId),
+    ]);
 
     const scheduleIds = (schedules ?? []).map((s) => s.id);
-
-    // Get groups for branch names
-    const { data: groups } = await service
-      .from("groups")
-      .select("id, name")
-      .eq("company_id", companyId);
 
     const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]));
     const scheduleGroupMap = new Map(
@@ -1139,14 +1139,15 @@ export const getManagerSwapsData = unstable_cache(
       (users ?? []).map((u) => [u.id, `${u.first_name} ${u.last_name}`]),
     );
 
+    // Build schedule→group lookup first (O(n) instead of O(n*m))
+    const scheduleToGroup = new Map(
+      (schedules ?? []).map((sc) => [sc.id, sc.group_id]),
+    );
     const shiftMap = new Map(
-      (shifts ?? [])
-        .map((s) => ({
-          ...s,
-          groupId: (schedules ?? []).find((sc) => sc.id === s.schedule_id)
-            ?.group_id,
-        }))
-        .map((s) => [s.id, s]),
+      (shifts ?? []).map((s) => [
+        s.id,
+        { ...s, groupId: scheduleToGroup.get(s.schedule_id) },
+      ]),
     );
 
     const groupMap = new Map((groups ?? []).map((g) => [g.id, g.name]));

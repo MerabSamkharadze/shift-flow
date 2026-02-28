@@ -40,7 +40,7 @@ export default async function ReportsPage({
         <div>
           <h1
             className="text-2xl md:text-3xl font-semibold text-[#F0EDE8] mb-1"
-            style={{ fontFamily: "Syne, sans-serif" }}
+            style={{ fontFamily: "var(--font-syne), sans-serif" }}
           >
             Monthly Report
           </h1>

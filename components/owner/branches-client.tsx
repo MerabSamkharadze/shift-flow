@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 type Group = {
   id: string;
@@ -44,18 +44,24 @@ export function BranchesClient({ branches }: { branches: ManagerBranch[] }) {
   const [editingName, setEditingName] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  const totalGroups = branches.reduce((s, b) => s + b.groups.length, 0);
-  const totalEmployees = branches.reduce(
-    (s, b) => s + b.groups.reduce((gs, g) => gs + g.employeeCount, 0),
-    0
+  const totalGroups = useMemo(
+    () => branches.reduce((s, b) => s + b.groups.length, 0),
+    [branches],
+  );
+  const totalEmployees = useMemo(
+    () => branches.reduce((s, b) => s + b.groups.reduce((gs, g) => gs + g.employeeCount, 0), 0),
+    [branches],
   );
 
-  const filtered = branches.filter((b) => {
-    const displayName = branchNames[b.managerId] || b.managerName;
-    const groupNames = b.groups.map((g) => g.name).join(" ");
-    const searchIn = `${displayName} ${b.managerName} ${groupNames}`.toLowerCase();
-    return searchIn.includes(searchQuery.toLowerCase());
-  });
+  const filtered = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return branches.filter((b) => {
+      const displayName = branchNames[b.managerId] || b.managerName;
+      const groupNames = b.groups.map((g) => g.name).join(" ");
+      const searchIn = `${displayName} ${b.managerName} ${groupNames}`.toLowerCase();
+      return searchIn.includes(q);
+    });
+  }, [branches, branchNames, searchQuery]);
 
   const handleStartRename = (managerId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -187,7 +193,7 @@ export function BranchesClient({ branches }: { branches: ManagerBranch[] }) {
                         <div className="flex items-center gap-2">
                           <h3
                             className="text-base md:text-lg font-semibold text-[#F0EDE8]"
-                            style={{ fontFamily: "Syne, sans-serif" }}
+                            style={{ fontFamily: "var(--font-syne), sans-serif" }}
                           >
                             {displayName}
                           </h3>
@@ -312,7 +318,7 @@ export function BranchesClient({ branches }: { branches: ManagerBranch[] }) {
                   <div>
                     <h2
                       className="text-xl font-semibold text-[#F0EDE8]"
-                      style={{ fontFamily: "Syne, sans-serif" }}
+                      style={{ fontFamily: "var(--font-syne), sans-serif" }}
                     >
                       {branchNames[selectedBranch.managerId] || selectedBranch.managerName}
                     </h2>

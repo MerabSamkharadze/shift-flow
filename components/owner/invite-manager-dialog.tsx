@@ -103,7 +103,7 @@ export function InviteManagerDialog() {
                 <div>
                   <h2
                     className="text-base md:text-lg font-semibold text-[#F0EDE8]"
-                    style={{ fontFamily: "Syne, sans-serif" }}
+                    style={{ fontFamily: "var(--font-syne), sans-serif" }}
                   >
                     Invite Manager
                   </h2>
@@ -124,7 +124,7 @@ export function InviteManagerDialog() {
                 <div className="w-16 h-16 rounded-full bg-[#4ECBA0]/10 flex items-center justify-center mx-auto mb-4">
                   <i className="ri-check-line text-3xl text-[#4ECBA0]" />
                 </div>
-                <h3 className="text-lg font-semibold text-[#F0EDE8] mb-2" style={{ fontFamily: "Syne, sans-serif" }}>
+                <h3 className="text-lg font-semibold text-[#F0EDE8] mb-2" style={{ fontFamily: "var(--font-syne), sans-serif" }}>
                   Invite Sent!
                 </h3>
                 <p className="text-sm text-[#7A94AD]">

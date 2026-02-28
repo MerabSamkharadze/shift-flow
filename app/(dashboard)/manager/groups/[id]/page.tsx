@@ -35,7 +35,7 @@ export default async function GroupDetailPage({
         />
         <h1
           className="text-2xl md:text-3xl font-semibold text-[#F0EDE8]"
-          style={{ fontFamily: "Syne, sans-serif" }}
+          style={{ fontFamily: "var(--font-syne), sans-serif" }}
         >
           {group.name}
         </h1>

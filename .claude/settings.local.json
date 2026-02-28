@@ -10,7 +10,8 @@
       "Bash(npm install:*)",
       "Bash(npm uninstall:*)",
       "Bash(cat:*)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(read f:*)"
     ]
   }
 }

@@ -14,12 +14,17 @@ async function getManagerProfile() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, company_id, role")
+    .select("id, company_id, role, is_active")
     .eq("id", user.id)
     .single();
 
   if (!profile || profile.role !== "manager") {
     throw new Error("Unauthorized");
+  }
+  // SEC-003: reject deactivated users and clear their session.
+  if (profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/auth/login");
   }
 
   return { supabase, profile };
@@ -139,12 +144,24 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
 }
 
 export async function deleteShiftTemplate(templateId: string, groupId: string) {
-  const { supabase } = await getManagerProfile();
+  const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the manager owns the group before deleting, and scope the
+    // delete to that group so a template from another group cannot be targeted.
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("id", groupId)
+      .eq("manager_id", profile.id)
+      .single();
+
+    if (!group) return { error: "Group not found" };
+
     const { error } = await supabase
       .from("shift_templates")
       .delete()
-      .eq("id", templateId);
+      .eq("id", templateId)
+      .eq("group_id", groupId);
 
     if (error) return { error: error.message };
 
@@ -189,12 +206,24 @@ export async function addGroupMember(groupId: string, userId: string) {
 }
 
 export async function removeGroupMember(memberId: string, groupId: string) {
-  const { supabase } = await getManagerProfile();
+  const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the manager owns the group before removing a member, and
+    // scope the delete to that group.
+    const { data: group } = await supabase
+      .from("groups")
+      .select("id")
+      .eq("id", groupId)
+      .eq("manager_id", profile.id)
+      .single();
+
+    if (!group) return { error: "Group not found" };
+
     const { error } = await supabase
       .from("group_members")
       .delete()
-      .eq("id", memberId);
+      .eq("id", memberId)
+      .eq("group_id", groupId);
 
     if (error) return { error: error.message };
 
@@ -260,14 +289,29 @@ export async function deactivateEmployee(employeeId: string) {
   try {
     const service = createServiceClient();
 
-    const { error } = await service
+    const { data: updated, error } = await service
       .from("users")
       .update({ is_active: false })
       .eq("id", employeeId)
       .eq("created_by", profile.id)
-      .eq("role", "employee");
+      .eq("role", "employee")
+      .select("id");
 
     if (error) return { error: error.message };
+    if (!updated || updated.length === 0) {
+      return { error: "Employee not found" };
+    }
+
+    // SEC-003: revoke the employee's sessions/tokens so deactivation takes effect
+    // immediately (banning blocks token refresh and new logins; the is_active
+    // check in the auth guards kills the current access token on its next use).
+    try {
+      await service.auth.admin.updateUserById(employeeId, {
+        ban_duration: "876000h",
+      });
+    } catch {
+      // best-effort — the is_active guard is the authoritative gate
+    }
 
     revalidateTag("manager-dashboard");
     revalidateTag("manager-employees");
@@ -284,16 +328,31 @@ export async function approveSwap(swapId: string) {
   const { profile } = await getManagerProfile();
   const service = createServiceClient();
   try {
-    // 1. Fetch the swap to get shift + recipient
+    // 1. Fetch the swap — scoped to the caller's company (SEC-002 tenant guard).
     const { data: swap, error: fetchError } = await service
       .from("shift_swaps")
       .select("id, shift_id, from_user_id, to_user_id, accepted_by, type")
       .eq("id", swapId)
+      .eq("company_id", profile.company_id)
       .in("status", ["accepted_by_employee", "pending_manager"])
       .single();
 
     if (fetchError) return { error: fetchError.message };
     if (!swap) return { error: "Swap not found or no longer pending" };
+
+    // 1b. SEC-002: the service client bypasses RLS, so verify explicitly that
+    //     the shift being swapped belongs to a group THIS manager manages —
+    //     not merely to someone else in the same company.
+    const { data: shiftOwner } = await service
+      .from("shifts")
+      .select("id, groups!inner(manager_id)")
+      .eq("id", swap.shift_id)
+      .single();
+
+    const ownerGrp = shiftOwner?.groups as { manager_id: string } | null;
+    if (!shiftOwner || !ownerGrp || ownerGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
 
     // For direct swaps the recipient is to_user_id; for public it's accepted_by
     const newAssignee =
@@ -337,6 +396,29 @@ export async function rejectSwap(swapId: string, note?: string) {
   const { profile } = await getManagerProfile();
   const service = createServiceClient();
   try {
+    // SEC-002: verify the swap is in the caller's company AND its shift belongs
+    // to a group this manager manages, before mutating via the service client.
+    const { data: swap } = await service
+      .from("shift_swaps")
+      .select("id, shift_id")
+      .eq("id", swapId)
+      .eq("company_id", profile.company_id)
+      .in("status", ["accepted_by_employee", "pending_manager"])
+      .single();
+
+    if (!swap) return { error: "Swap not found or no longer pending" };
+
+    const { data: shiftOwner } = await service
+      .from("shifts")
+      .select("id, groups!inner(manager_id)")
+      .eq("id", swap.shift_id)
+      .single();
+
+    const ownerGrp = shiftOwner?.groups as { manager_id: string } | null;
+    if (!shiftOwner || !ownerGrp || ownerGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
+
     const { error } = await service
       .from("shift_swaps")
       .update({

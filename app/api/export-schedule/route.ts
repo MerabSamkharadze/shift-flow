@@ -82,11 +82,12 @@ export async function GET(req: NextRequest) {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, role")
+    .select("id, role, is_active")
     .eq("id", user.id)
     .single();
 
-  if (!profile || profile.role !== "manager") {
+  // SEC-003: deactivated users must be denied even with a still-valid JWT.
+  if (!profile || profile.role !== "manager" || profile.is_active === false) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -14,7 +14,11 @@ export function ConfirmClient() {
       const supabase = createClient();
       const token_hash = searchParams.get("token_hash");
       const type = searchParams.get("type") as EmailOtpType | null;
-      const next = searchParams.get("next") ?? "/";
+      // SEC-005: only allow same-origin relative redirects. Reject absolute and
+      // protocol-relative ("//evil.com") values.
+      const rawNext = searchParams.get("next") ?? "/";
+      const next =
+        rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
       // ── PKCE flow ──────────────────────────────────────────────────────────
       if (token_hash && type) {

@@ -14,12 +14,17 @@ async function getEmployeeProfile() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, role, company_id")
+    .select("id, role, company_id, is_active")
     .eq("id", user.id)
     .single();
 
   if (!profile || profile.role !== "employee") {
     throw new Error("Unauthorized");
+  }
+  // SEC-003: reject deactivated users and clear their session.
+  if (profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/auth/login");
   }
 
   return { supabase, profile };

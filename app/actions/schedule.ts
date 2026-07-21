@@ -13,12 +13,17 @@ async function getManagerProfile() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, company_id, role")
+    .select("id, company_id, role, is_active")
     .eq("id", user.id)
     .single();
 
   if (!profile || profile.role !== "manager") {
     throw new Error("Unauthorized");
+  }
+  // SEC-003: reject deactivated users and clear their session.
+  if (profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/auth/login");
   }
 
   return { supabase, profile };
@@ -256,13 +261,29 @@ export async function addShift(
 export async function updateShift(shiftId: string, templateId: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the shift belongs to a group this manager manages.
+    const { data: owned } = await supabase
+      .from("shifts")
+      .select("id, group_id, groups!inner(manager_id)")
+      .eq("id", shiftId)
+      .single();
+
+    const ownedGrp = owned?.groups as { manager_id: string } | null;
+    if (!owned || !ownedGrp || ownedGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
+
     const { data: template } = await supabase
       .from("shift_templates")
-      .select("start_time, end_time")
+      .select("start_time, end_time, group_id")
       .eq("id", templateId)
       .single();
 
     if (!template) return { error: "Template not found" };
+    // The template must belong to the same group as the shift.
+    if (template.group_id !== owned.group_id) {
+      return { error: "Template does not belong to this group" };
+    }
 
     const { error } = await supabase
       .from("shifts")
@@ -290,6 +311,19 @@ export async function updateShift(shiftId: string, templateId: string) {
 export async function removeShift(shiftId: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the shift belongs to a group this manager manages before
+    // mutating or deleting it.
+    const { data: owned } = await supabase
+      .from("shifts")
+      .select("id, groups!inner(manager_id)")
+      .eq("id", shiftId)
+      .single();
+
+    const ownedGrp = owned?.groups as { manager_id: string } | null;
+    if (!owned || !ownedGrp || ownedGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
+
     // Set modified_by before delete so the DELETE trigger can read OLD.modified_by
     await supabase
       .from("shifts")
@@ -313,6 +347,18 @@ export async function removeShift(shiftId: string) {
 export async function addShiftNote(shiftId: string, note: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the shift belongs to a group this manager manages.
+    const { data: owned } = await supabase
+      .from("shifts")
+      .select("id, groups!inner(manager_id)")
+      .eq("id", shiftId)
+      .single();
+
+    const ownedGrp = owned?.groups as { manager_id: string } | null;
+    if (!owned || !ownedGrp || ownedGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
+
     const { error } = await supabase
       .from("shifts")
       .update({ notes: note.trim() || null, modified_by: profile.id })
@@ -337,6 +383,19 @@ export async function saveExtraHours(
 ) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    // SEC-004: verify the shift belongs to a group this manager manages before
+    // writing payroll-affecting extra hours.
+    const { data: owned } = await supabase
+      .from("shifts")
+      .select("id, groups!inner(manager_id)")
+      .eq("id", shiftId)
+      .single();
+
+    const ownedGrp = owned?.groups as { manager_id: string } | null;
+    if (!owned || !ownedGrp || ownedGrp.manager_id !== profile.id) {
+      return { error: "Unauthorized" };
+    }
+
     const { error } = await supabase
       .from("shifts")
       .update({

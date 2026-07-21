@@ -5,7 +5,11 @@ import type { Database } from "@/lib/types/database.types";
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  // SEC-005: only allow same-origin relative redirects. Reject absolute URLs and
+  // protocol-relative ("//evil.com") values, which would override the origin base.
+  const rawNext = searchParams.get("next") ?? "/";
+  const next =
+    rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   if (code) {
     const response = NextResponse.redirect(new URL(next, origin));

@@ -14,12 +14,17 @@ async function getOwnerProfile() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, company_id, role")
+    .select("id, company_id, role, is_active")
     .eq("id", user.id)
     .single();
 
   if (!profile || profile.role !== "owner") {
     throw new Error("Unauthorized");
+  }
+  // SEC-003: reject deactivated users and clear their session.
+  if (profile.is_active === false) {
+    await supabase.auth.signOut();
+    redirect("/auth/login");
   }
 
   return { supabase, profile };
@@ -85,14 +90,29 @@ export async function deactivateManager(managerId: string) {
     const { profile } = await getOwnerProfile();
     const service = createServiceClient();
 
-    const { error } = await service
+    const { data: updated, error } = await service
       .from("users")
       .update({ is_active: false })
       .eq("id", managerId)
       .eq("company_id", profile.company_id)
-      .eq("role", "manager");
+      .eq("role", "manager")
+      .select("id");
 
     if (error) return { error: error.message };
+    if (!updated || updated.length === 0) {
+      return { error: "Manager not found" };
+    }
+
+    // SEC-003: revoke the manager's sessions/tokens so deactivation takes effect
+    // immediately (banning blocks token refresh and new logins; the is_active
+    // check in the auth guards kills the current access token on its next use).
+    try {
+      await service.auth.admin.updateUserById(managerId, {
+        ban_duration: "876000h",
+      });
+    } catch {
+      // best-effort — the is_active guard is the authoritative gate
+    }
 
     revalidateTag("owner-managers");
     revalidateTag("owner-dashboard");

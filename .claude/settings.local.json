@@ -9,7 +9,15 @@
       "Bash(find:*)",
       "Bash(npm install:*)",
       "Bash(npm uninstall:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git check-ignore *)",
+      "Bash(grep -n -i -E \"^#{1,4} |CREATE POLICY|CREATE TABLE|ALTER TABLE|ENABLE ROW LEVEL|CREATE FUNCTION|RLS|password|service_role|supabase.co\" README.md)",
+      "Bash(node -e \"console.log\\(require\\('next/package.json'\\).version\\)\")",
+      "Bash(xargs grep -ln \"isLocalURL\\\\|javascript:\")",
+      "Bash(grep -nA12 \"function handleExternalUrl\" node_modules/next/dist/client/components/router-reducer/reducers/navigate-reducer.js)",
+      "Bash(npm audit *)",
+      "Bash(npm outdated *)",
+      "Bash(grep -vi \"verifyOtp\\\\|//\")"
     ]
   }
 }

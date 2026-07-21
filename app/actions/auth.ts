@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { safeError } from "@/lib/errors"
 
 /**
  * Clears the must_change_password flag after the user has set a new password.
@@ -21,6 +22,6 @@ export async function clearMustChangePassword() {
     .update({ must_change_password: false })
     .eq("id", user.id)
 
-  if (error) return { error: error.message }
+  if (error) return { error: safeError(error) }
   return { error: null }
 }

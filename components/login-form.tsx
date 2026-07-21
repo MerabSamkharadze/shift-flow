@@ -33,6 +33,10 @@ export function LoginForm({
 
     const supabase = createClient()
 
+    // SEC-006: login rate limiting / brute-force protection is enforced
+    // server-side by Supabase Auth (Authentication → Rate Limits in the
+    // dashboard). This request goes browser → Supabase directly, so there is no
+    // application code path to throttle it here.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,

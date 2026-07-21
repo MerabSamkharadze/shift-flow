@@ -4,6 +4,8 @@ import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { safeError } from "@/lib/errors";
+import { inviteRateLimitExceeded } from "@/lib/rate-limit";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -51,7 +53,7 @@ export async function createGroup(formData: FormData) {
       .select("id")
       .single();
 
-    if (error) return { groupId: null, error: error.message };
+    if (error) return { groupId: null, error: safeError(error) };
 
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
@@ -70,7 +72,7 @@ export async function deleteGroup(groupId: string) {
       .eq("id", groupId)
       .eq("manager_id", profile.id);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
@@ -92,7 +94,7 @@ export async function updateGroup(groupId: string, name: string) {
       .eq("id", groupId)
       .eq("manager_id", profile.id);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
@@ -133,7 +135,7 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
       color,
     });
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("group-detail");
     revalidateTag("manager-schedule");
@@ -163,7 +165,7 @@ export async function deleteShiftTemplate(templateId: string, groupId: string) {
       .eq("id", templateId)
       .eq("group_id", groupId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("group-detail");
     revalidateTag("manager-schedule");
@@ -194,7 +196,7 @@ export async function addGroupMember(groupId: string, userId: string) {
 
     if (error) {
       if (error.code === "23505") return { error: "Employee is already in this group" };
-      return { error: error.message };
+      return { error: safeError(error) };
     }
 
     revalidateTag("group-detail");
@@ -225,7 +227,7 @@ export async function removeGroupMember(memberId: string, groupId: string) {
       .eq("id", memberId)
       .eq("group_id", groupId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("group-detail");
     revalidateTag("employee-team");
@@ -249,6 +251,14 @@ export async function inviteEmployee(formData: FormData) {
     }
 
     const service = createServiceClient();
+
+    // SEC-006: throttle invitations to prevent email-bombing / abuse.
+    if (await inviteRateLimitExceeded(profile.id)) {
+      return {
+        error: "Too many invitations sent recently. Please try again later.",
+      };
+    }
+
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
     const { data: authData, error: inviteError } =
@@ -256,7 +266,16 @@ export async function inviteEmployee(formData: FormData) {
         redirectTo: `${siteUrl}/auth/confirm`,
       });
 
-    if (inviteError) return { error: inviteError.message };
+    if (inviteError) {
+      // SEC-008: never echo raw provider errors and do not reveal whether the
+      // address already exists (user enumeration). Treat an existing account as
+      // a silent no-op so the response is identical to a fresh invitation.
+      const alreadyRegistered =
+        inviteError.status === 422 ||
+        /already|registered|exist/i.test(inviteError.message);
+      if (alreadyRegistered) return { error: null };
+      return { error: safeError(inviteError) };
+    }
 
     const { error: profileError } = await service.from("users").insert({
       id: authData.user.id,
@@ -272,7 +291,7 @@ export async function inviteEmployee(formData: FormData) {
 
     if (profileError) {
       await service.auth.admin.deleteUser(authData.user.id);
-      return { error: profileError.message };
+      return { error: safeError(profileError) };
     }
 
     revalidateTag("manager-dashboard");
@@ -297,7 +316,7 @@ export async function deactivateEmployee(employeeId: string) {
       .eq("role", "employee")
       .select("id");
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
     if (!updated || updated.length === 0) {
       return { error: "Employee not found" };
     }
@@ -337,7 +356,7 @@ export async function approveSwap(swapId: string) {
       .in("status", ["accepted_by_employee", "pending_manager"])
       .single();
 
-    if (fetchError) return { error: fetchError.message };
+    if (fetchError) return { error: safeError(fetchError) };
     if (!swap) return { error: "Swap not found or no longer pending" };
 
     // 1b. SEC-002: the service client bypasses RLS, so verify explicitly that
@@ -367,7 +386,7 @@ export async function approveSwap(swapId: string) {
       .update({ assigned_to: newAssignee, modified_by: profile.id })
       .eq("id", swap.shift_id);
 
-    if (shiftError) return { error: shiftError.message };
+    if (shiftError) return { error: safeError(shiftError) };
 
     // 3. Mark the swap approved
     const { error: swapError } = await service
@@ -379,7 +398,7 @@ export async function approveSwap(swapId: string) {
       })
       .eq("id", swapId);
 
-    if (swapError) return { error: swapError.message };
+    if (swapError) return { error: safeError(swapError) };
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-schedule");
@@ -388,7 +407,7 @@ export async function approveSwap(swapId: string) {
     revalidateTag("employee-schedule");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -430,13 +449,13 @@ export async function rejectSwap(swapId: string, note?: string) {
       .eq("id", swapId)
       .in("status", ["accepted_by_employee", "pending_manager"]);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-dashboard");
     revalidateTag("employee-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }

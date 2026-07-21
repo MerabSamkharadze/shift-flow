@@ -4,6 +4,8 @@ import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { safeError } from "@/lib/errors";
+import { inviteRateLimitExceeded } from "@/lib/rate-limit";
 
 async function getOwnerProfile() {
   const supabase = createClient();
@@ -46,6 +48,13 @@ export async function inviteManager(formData: FormData) {
 
     const service = createServiceClient();
 
+    // SEC-006: throttle invitations to prevent email-bombing / abuse.
+    if (await inviteRateLimitExceeded(profile.id)) {
+      return {
+        error: "Too many invitations sent recently. Please try again later.",
+      };
+    }
+
     // NEXT_PUBLIC_SITE_URL must be set in production (e.g. https://yourapp.com).
     // Falls back to localhost for local development.
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -56,7 +65,15 @@ export async function inviteManager(formData: FormData) {
         redirectTo: `${siteUrl}/auth/confirm`,
       });
 
-    if (inviteError) return { error: inviteError.message };
+    if (inviteError) {
+      // SEC-008: never echo raw provider errors and do not reveal whether the
+      // address already exists (user enumeration).
+      const alreadyRegistered =
+        inviteError.status === 422 ||
+        /already|registered|exist/i.test(inviteError.message);
+      if (alreadyRegistered) return { error: null };
+      return { error: safeError(inviteError) };
+    }
 
     // Create the profile row. must_change_password ensures the middleware
     // forces a password update on first login (safety net for the invite flow).
@@ -67,6 +84,7 @@ export async function inviteManager(formData: FormData) {
       last_name: lastName,
       role: "manager",
       company_id: profile.company_id,
+      created_by: profile.id,
       must_change_password: true,
       is_active: true,
     });
@@ -74,7 +92,7 @@ export async function inviteManager(formData: FormData) {
     if (profileError) {
       // Roll back: remove the auth user we just created so the email stays clean.
       await service.auth.admin.deleteUser(authData.user.id);
-      return { error: profileError.message };
+      return { error: safeError(profileError) };
     }
 
     revalidateTag("owner-managers");
@@ -98,7 +116,7 @@ export async function deactivateManager(managerId: string) {
       .eq("role", "manager")
       .select("id");
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
     if (!updated || updated.length === 0) {
       return { error: "Manager not found" };
     }

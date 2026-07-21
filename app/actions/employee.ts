@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { safeError } from "@/lib/errors";
 
 async function getEmployeeProfile() {
   const supabase = createClient();
@@ -45,20 +46,47 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
   const { supabase, profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
-    // Verify shift belongs to this employee; fetch date + start_time for deadline
+    if (toUserId === profile.id) {
+      return { error: "You cannot swap a shift with yourself" };
+    }
+
+    // Verify shift belongs to this employee; fetch date + start_time + group
     const { data: shift, error: shiftError } = await supabase
       .from("shifts")
-      .select("id, date, start_time")
+      .select("id, date, start_time, group_id")
       .eq("id", shiftId)
       .eq("assigned_to", profile.id)
       .single();
 
-    if (shiftError) return { error: shiftError.message };
+    if (shiftError) return { error: safeError(shiftError) };
     if (!shift) return { error: "Shift not found" };
 
     const deadline = shiftDeadline(shift.date, shift.start_time);
     if (new Date(deadline) <= new Date()) {
       return { error: "The swap deadline for this shift has already passed" };
+    }
+
+    // SEC-009: the recipient must be an active employee who is a member of the
+    // shift's group (this also confines the swap to the caller's own tenant).
+    // toUserId is otherwise attacker-controlled and written straight into the swap.
+    const { data: recipient } = await service
+      .from("group_members")
+      .select("id, users!inner(is_active, company_id, role)")
+      .eq("group_id", shift.group_id)
+      .eq("user_id", toUserId)
+      .maybeSingle();
+
+    const recipientUser = recipient?.users as
+      | { is_active: boolean; company_id: string; role: string }
+      | null;
+    if (
+      !recipient ||
+      !recipientUser ||
+      recipientUser.is_active === false ||
+      recipientUser.role !== "employee" ||
+      recipientUser.company_id !== profile.company_id
+    ) {
+      return { error: "Selected employee is not available for this swap" };
     }
 
     // Guard: no in-flight swap already exists for this shift
@@ -82,14 +110,14 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
       deadline,
     });
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -105,7 +133,7 @@ export async function createPublicSwap(shiftId: string) {
       .eq("assigned_to", profile.id)
       .single();
 
-    if (shiftError) return { error: shiftError.message };
+    if (shiftError) return { error: safeError(shiftError) };
     if (!shift) return { error: "Shift not found" };
 
     const deadline = shiftDeadline(shift.date, shift.start_time);
@@ -134,14 +162,14 @@ export async function createPublicSwap(shiftId: string) {
       deadline,
     });
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -159,13 +187,13 @@ export async function acceptSwap(swapId: string) {
       .eq("type", "direct")
       .eq("status", "pending_employee");
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -181,13 +209,13 @@ export async function rejectSwap(swapId: string) {
       .eq("type", "direct")
       .eq("status", "pending_employee");
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -202,13 +230,13 @@ export async function cancelSwap(swapId: string) {
       .eq("from_user_id", profile.id)
       .eq("status", "pending_employee");
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }
 
@@ -219,7 +247,7 @@ export async function takePublicShift(swapId: string) {
     // Verify claimable (public, pending, not the requester's own)
     const { data: swap } = await supabase
       .from("shift_swaps")
-      .select("id")
+      .select("id, shift_id, deadline")
       .eq("id", swapId)
       .eq("type", "public")
       .eq("status", "pending_employee")
@@ -228,18 +256,43 @@ export async function takePublicShift(swapId: string) {
 
     if (!swap) return { error: "Swap not found or not available" };
 
+    // SEC-009: the claim window must not have passed.
+    if (swap.deadline && new Date(swap.deadline) <= new Date()) {
+      return { error: "The deadline to claim this shift has passed" };
+    }
+
+    // SEC-009: the caller must be a member of the group that owns the shift.
+    // The public board is filtered by group in the UI, but this action accepts
+    // an arbitrary swapId, so membership must be enforced here as well.
+    const { data: shift } = await service
+      .from("shifts")
+      .select("group_id")
+      .eq("id", swap.shift_id)
+      .single();
+
+    if (!shift) return { error: "Swap not found or not available" };
+
+    const { data: membership } = await service
+      .from("group_members")
+      .select("id")
+      .eq("group_id", shift.group_id)
+      .eq("user_id", profile.id)
+      .maybeSingle();
+
+    if (!membership) return { error: "This shift is not available to you" };
+
     const { error } = await service
       .from("shift_swaps")
       .update({ accepted_by: profile.id, status: "accepted_by_employee" })
       .eq("id", swapId)
       .eq("status", "pending_employee"); // race-condition guard
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Something went wrong" };
+    return { error: safeError(err) };
   }
 }

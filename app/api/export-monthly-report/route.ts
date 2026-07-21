@@ -108,7 +108,12 @@ export async function GET(req: NextRequest) {
     : { data: [] as RawShift[], error: null };
 
   if (shiftsError) {
-    return NextResponse.json({ error: shiftsError.message }, { status: 500 });
+    // SEC-008: log the real error server-side; return a generic message.
+    console.error("[export-monthly-report]", shiftsError);
+    return NextResponse.json(
+      { error: "Failed to generate report" },
+      { status: 500 },
+    );
   }
 
   // ── Aggregate by employee ───────────────────────────────────────────────────

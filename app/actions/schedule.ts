@@ -3,6 +3,7 @@
 import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { safeError } from "@/lib/errors";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -63,7 +64,7 @@ export async function createSchedule(groupId: string, weekStart: string) {
       .select("id")
       .single();
 
-    if (error) return { scheduleId: null, error: error.message };
+    if (error) return { scheduleId: null, error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -134,7 +135,7 @@ export async function copyFromLastWeek(groupId: string, weekStart: string) {
       .single();
 
     if (scheduleError) {
-      return { scheduleId: null, error: scheduleError.message };
+      return { scheduleId: null, error: safeError(scheduleError) };
     }
 
     // Query 4: batch insert shifted copies (+7 days)
@@ -188,7 +189,7 @@ export async function publishSchedule(scheduleId: string) {
       .update({ status: "published" })
       .eq("id", scheduleId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -219,7 +220,7 @@ export async function addShift(
         .single(),
       supabase
         .from("shift_templates")
-        .select("start_time, end_time")
+        .select("start_time, end_time, group_id")
         .eq("id", templateId)
         .single(),
     ]);
@@ -229,6 +230,24 @@ export async function addShift(
       return { shiftId: null, error: "Unauthorized" };
     }
     if (!templateRes.data) return { shiftId: null, error: "Template not found" };
+
+    // SEC-009: the template must belong to the schedule's group, and the
+    // assignee must be a member of that group — userId/templateId are otherwise
+    // unvalidated and written straight into the shift.
+    if (templateRes.data.group_id !== scheduleRes.data.group_id) {
+      return { shiftId: null, error: "Template does not belong to this group" };
+    }
+
+    const { data: membership } = await supabase
+      .from("group_members")
+      .select("id")
+      .eq("group_id", scheduleRes.data.group_id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!membership) {
+      return { shiftId: null, error: "Employee is not a member of this group" };
+    }
 
     // Query 3: insert
     const { data, error } = await supabase
@@ -246,7 +265,7 @@ export async function addShift(
       .select("id")
       .single();
 
-    if (error) return { shiftId: null, error: error.message };
+    if (error) return { shiftId: null, error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -296,7 +315,7 @@ export async function updateShift(shiftId: string, templateId: string) {
       })
       .eq("id", shiftId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -332,7 +351,7 @@ export async function removeShift(shiftId: string) {
 
     const { error } = await supabase.from("shifts").delete().eq("id", shiftId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -364,7 +383,7 @@ export async function addShiftNote(shiftId: string, note: string) {
       .update({ notes: note.trim() || null, modified_by: profile.id })
       .eq("id", shiftId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");
@@ -405,7 +424,7 @@ export async function saveExtraHours(
       })
       .eq("id", shiftId);
 
-    if (error) return { error: error.message };
+    if (error) return { error: safeError(error) };
 
     revalidateTag("manager-schedule");
     revalidateTag("employee-schedule");

@@ -31,7 +31,11 @@ export function ForgotPasswordForm({
     setError(null);
 
     try {
-      // The url which will be included in the email. This URL needs to be configured in your redirect URLs in the Supabase dashboard at https://supabase.com/dashboard/project/_/auth/url-configuration
+      // SEC-006: password-reset rate limiting is enforced server-side by Supabase
+      // Auth (Authentication → Rate Limits in the dashboard). This request goes
+      // from the browser straight to Supabase, so there is no app hop to throttle.
+      // The redirect URL below must be allow-listed in the Supabase dashboard
+      // (Authentication → URL Configuration).
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/update-password`,
       });

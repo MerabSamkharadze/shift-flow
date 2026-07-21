@@ -2,8 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
-import { clearMustChangePassword } from "@/app/actions/auth"
+import { setInitialPassword } from "@/app/actions/auth"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -37,25 +36,15 @@ export function ChangePasswordForm({ role }: { role: string }) {
 
     setIsLoading(true)
 
-    const supabase = createClient()
-
-    // 1. Update password in Supabase Auth
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    if (updateError) {
-      setError(updateError.message)
+    // Set the password and clear the forced-change flag atomically server-side.
+    const { error: submitError } = await setInitialPassword(password)
+    if (submitError) {
+      setError(submitError)
       setIsLoading(false)
       return
     }
 
-    // 2. Clear the must_change_password flag via server action
-    const { error: flagError } = await clearMustChangePassword()
-    if (flagError) {
-      setError("Password updated, but failed to clear flag. Contact support.")
-      setIsLoading(false)
-      return
-    }
-
-    // 3. Redirect to the user's dashboard
+    // Redirect to the user's dashboard
     router.push(`/${role}`)
   }
 

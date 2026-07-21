@@ -27,8 +27,16 @@ export function UpdatePasswordForm({
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const supabase = createClient();
-    setIsLoading(true);
     setError(null);
+
+    // SEC-013: enforce a consistent minimum client-side (the authoritative
+    // policy is configured in the Supabase dashboard → Authentication).
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
       const { error } = await supabase.auth.updateUser({ password });

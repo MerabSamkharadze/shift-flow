@@ -103,6 +103,15 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  // SEC-015: validate weekStart before it flows into date math and the
+  // Content-Disposition filename below.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+    return NextResponse.json(
+      { error: "Invalid weekStart. Expected YYYY-MM-DD" },
+      { status: 400 },
+    );
+  }
+
   // Verify this group belongs to the requesting manager
   const { data: group } = await supabase
     .from("groups")
@@ -451,7 +460,11 @@ export async function GET(req: NextRequest) {
 
   // ── Respond ──────────────────────────────────────────────────────────────────
   const buffer = await workbook.xlsx.writeBuffer();
-  const fileName = `Schedule_Week_${weekStart}_${group.name.replace(/\s+/g, "_")}.xlsx`;
+  // SEC-015: sanitize the manager-controlled group name to a safe charset so it
+  // cannot break out of the quoted Content-Disposition filename. weekStart is
+  // already validated above.
+  const safeName = group.name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 50);
+  const fileName = `Schedule_Week_${weekStart}_${safeName}.xlsx`;
 
   return new NextResponse(buffer as unknown as ArrayBuffer, {
     status: 200,

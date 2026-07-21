@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
 import { inviteRateLimitExceeded } from "@/lib/rate-limit";
+import { isEmail } from "@/lib/validation";
 
 async function getOwnerProfile() {
   const supabase = createClient();
@@ -44,6 +45,10 @@ export async function inviteManager(formData: FormData) {
 
     if (!firstName || !lastName || !email) {
       return { error: "All fields are required" };
+    }
+    // SEC-010: validate email format before hitting the invite API.
+    if (!isEmail(email)) {
+      return { error: "Please enter a valid email address" };
     }
 
     const service = createServiceClient();

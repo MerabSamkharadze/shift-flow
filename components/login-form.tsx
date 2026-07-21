@@ -73,8 +73,12 @@ export function LoginForm({
       return
     }
 
-    // Store role in a cookie so middleware can use it for route protection
-    document.cookie = `sf-role=${profile.role}; path=/; SameSite=Lax`
+    // Store role in a cookie so middleware can use it for route protection.
+    // SEC-012: mark Secure over HTTPS and give it an explicit lifetime. This is a
+    // UX redirect hint only (never an authorization input) — HttpOnly is not
+    // possible from document.cookie and is unnecessary here.
+    const secure = window.location.protocol === "https:" ? "; Secure" : ""
+    document.cookie = `sf-role=${profile.role}; path=/; max-age=604800; SameSite=Lax${secure}`
 
     if (profile.must_change_password) {
       router.push("/auth/change-password")

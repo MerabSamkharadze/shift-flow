@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
 import { inviteRateLimitExceeded } from "@/lib/rate-limit";
+import { isEmail, isTime, cleanText, MAX_NAME, MAX_NOTE } from "@/lib/validation";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -109,13 +110,17 @@ export async function updateGroup(groupId: string, name: string) {
 export async function createShiftTemplate(groupId: string, formData: FormData) {
   const { supabase, profile } = await getManagerProfile();
   try {
-    const name = (formData.get("name") as string)?.trim();
+    const name = cleanText(formData.get("name"), MAX_NAME);
     const startTime = formData.get("start_time") as string;
     const endTime = formData.get("end_time") as string;
     const color = (formData.get("color") as string) || "#3b82f6";
 
     if (!name) return { error: "Template name is required" };
     if (!startTime || !endTime) return { error: "Start and end time are required" };
+    // SEC-010: reject malformed times (they otherwise poison duration/payroll math)
+    if (!isTime(startTime) || !isTime(endTime)) {
+      return { error: "Invalid time format" };
+    }
 
     // Verify group ownership
     const { data: group } = await supabase
@@ -249,6 +254,10 @@ export async function inviteEmployee(formData: FormData) {
     if (!firstName || !lastName || !email) {
       return { error: "All fields are required" };
     }
+    // SEC-010: validate email format before hitting the invite API.
+    if (!isEmail(email)) {
+      return { error: "Please enter a valid email address" };
+    }
 
     const service = createServiceClient();
 
@@ -378,27 +387,33 @@ export async function approveSwap(swapId: string) {
       swap.type === "direct" ? swap.to_user_id : swap.accepted_by;
     if (!newAssignee) return { error: "No recipient found for this swap" };
 
-    // 2. Reassign the shift — only updates assigned_to + modified_by;
-    //    all other columns (extra_hours, extra_hours_notes, start_time,
-    //    end_time, shift_template_id, etc.) are preserved automatically.
-    const { error: shiftError } = await service
-      .from("shifts")
-      .update({ assigned_to: newAssignee, modified_by: profile.id })
-      .eq("id", swap.shift_id);
-
-    if (shiftError) return { error: safeError(shiftError) };
-
-    // 3. Mark the swap approved
-    const { error: swapError } = await service
+    // 2. SEC-018: claim the swap FIRST, guarded on its current status, so a
+    //    concurrent approval can't double-process it. Only if this update claims
+    //    the row do we proceed to reassign the shift.
+    const { data: approved, error: swapError } = await service
       .from("shift_swaps")
       .update({
         status: "approved",
         approved_by: profile.id,
         manager_responded_at: new Date().toISOString(),
       })
-      .eq("id", swapId);
+      .eq("id", swapId)
+      .in("status", ["accepted_by_employee", "pending_manager"])
+      .select("id");
 
     if (swapError) return { error: safeError(swapError) };
+    if (!approved || approved.length === 0) {
+      return { error: "This swap was already resolved" };
+    }
+
+    // 3. Reassign the shift — only updates assigned_to + modified_by; all other
+    //    columns (extra_hours, start_time, etc.) are preserved automatically.
+    const { error: shiftError } = await service
+      .from("shifts")
+      .update({ assigned_to: newAssignee, modified_by: profile.id })
+      .eq("id", swap.shift_id);
+
+    if (shiftError) return { error: safeError(shiftError) };
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-schedule");
@@ -438,18 +453,23 @@ export async function rejectSwap(swapId: string, note?: string) {
       return { error: "Unauthorized" };
     }
 
-    const { error } = await service
+    const { data: rejected, error } = await service
       .from("shift_swaps")
       .update({
         status: "rejected_by_manager",
         approved_by: profile.id,
-        manager_notes: note?.trim() || null,
+        manager_notes: cleanText(note, MAX_NOTE),
         manager_responded_at: new Date().toISOString(),
       })
       .eq("id", swapId)
-      .in("status", ["accepted_by_employee", "pending_manager"]);
+      .in("status", ["accepted_by_employee", "pending_manager"])
+      .select("id");
 
     if (error) return { error: safeError(error) };
+    // SEC-018: 0 rows means the swap was already resolved.
+    if (!rejected || rejected.length === 0) {
+      return { error: "This swap was already resolved" };
+    }
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-dashboard");

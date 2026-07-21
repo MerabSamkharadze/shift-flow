@@ -179,15 +179,20 @@ export async function acceptSwap(swapId: string) {
   const { profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
-    const { error } = await service
+    const { data: updated, error } = await service
       .from("shift_swaps")
       .update({ status: "accepted_by_employee" })
       .eq("id", swapId)
       .eq("to_user_id", profile.id)
       .eq("type", "direct")
-      .eq("status", "pending_employee");
+      .eq("status", "pending_employee")
+      .select("id");
 
     if (error) return { error: safeError(error) };
+    // SEC-018: 0 rows means the swap was already resolved/reassigned.
+    if (!updated || updated.length === 0) {
+      return { error: "This swap is no longer available" };
+    }
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
@@ -201,15 +206,20 @@ export async function rejectSwap(swapId: string) {
   const { profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
-    const { error } = await service
+    const { data: updated, error } = await service
       .from("shift_swaps")
       .update({ status: "rejected_by_employee" })
       .eq("id", swapId)
       .eq("to_user_id", profile.id)
       .eq("type", "direct")
-      .eq("status", "pending_employee");
+      .eq("status", "pending_employee")
+      .select("id");
 
     if (error) return { error: safeError(error) };
+    // SEC-018: 0 rows means the swap was already resolved.
+    if (!updated || updated.length === 0) {
+      return { error: "This swap is no longer available" };
+    }
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
@@ -223,14 +233,19 @@ export async function cancelSwap(swapId: string) {
   const { profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
-    const { error } = await service
+    const { data: updated, error } = await service
       .from("shift_swaps")
       .update({ status: "cancelled" })
       .eq("id", swapId)
       .eq("from_user_id", profile.id)
-      .eq("status", "pending_employee");
+      .eq("status", "pending_employee")
+      .select("id");
 
     if (error) return { error: safeError(error) };
+    // SEC-018: 0 rows means the swap can no longer be cancelled.
+    if (!updated || updated.length === 0) {
+      return { error: "This swap can no longer be cancelled" };
+    }
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
@@ -281,13 +296,18 @@ export async function takePublicShift(swapId: string) {
 
     if (!membership) return { error: "This shift is not available to you" };
 
-    const { error } = await service
+    const { data: claimed, error } = await service
       .from("shift_swaps")
       .update({ accepted_by: profile.id, status: "accepted_by_employee" })
       .eq("id", swapId)
-      .eq("status", "pending_employee"); // race-condition guard
+      .eq("status", "pending_employee") // race-condition guard
+      .select("id");
 
     if (error) return { error: safeError(error) };
+    // SEC-018: 0 rows means another employee claimed it first.
+    if (!claimed || claimed.length === 0) {
+      return { error: "This shift was just taken by someone else" };
+    }
 
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");

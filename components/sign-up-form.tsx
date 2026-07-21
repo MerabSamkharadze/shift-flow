@@ -39,6 +39,14 @@ export function SignUpForm({
       return;
     }
 
+    // SEC-013: enforce a consistent minimum client-side (the authoritative
+    // policy is configured in the Supabase dashboard → Authentication).
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signUp({
         email,

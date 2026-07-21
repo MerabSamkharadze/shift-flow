@@ -103,8 +103,11 @@ export function NotificationBell({ userId }: { userId: string }) {
 
     // 4. Navigate — deferred by one tick so Radix can release its
     //    scroll-lock / focus-trap before Next.js starts the transition.
-    if (n.action_url) {
-      setTimeout(() => router.push(n.action_url!), 0);
+    // SEC-016: action_url is a free-text DB column — only follow same-origin
+    // relative paths, never absolute/protocol-relative/javascript: URLs.
+    const target = n.action_url;
+    if (target && target.startsWith("/") && !target.startsWith("//")) {
+      setTimeout(() => router.push(target), 0);
     }
   }
 

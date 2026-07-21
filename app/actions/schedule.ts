@@ -4,6 +4,7 @@ import { revalidateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { safeError } from "@/lib/errors";
+import { isDate, clampExtraHours, cleanText, MAX_NOTE } from "@/lib/validation";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -35,6 +36,9 @@ async function getManagerProfile() {
 export async function createSchedule(groupId: string, weekStart: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    if (!isDate(weekStart)) {
+      return { scheduleId: null, error: "Invalid week start date" };
+    }
     // Verify ownership in same query via inner join
     const { data: group } = await supabase
       .from("groups")
@@ -80,6 +84,9 @@ export async function createSchedule(groupId: string, weekStart: string) {
 export async function copyFromLastWeek(groupId: string, weekStart: string) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    if (!isDate(weekStart)) {
+      return { scheduleId: null, error: "Invalid week start date" };
+    }
     const prevStart = (() => {
       const d = new Date(weekStart + "T00:00:00");
       d.setDate(d.getDate() - 7);
@@ -211,6 +218,7 @@ export async function addShift(
 ) {
   const { supabase, profile } = await getManagerProfile();
   try {
+    if (!isDate(date)) return { shiftId: null, error: "Invalid date" };
     // Query 2: verify schedule ownership + fetch template in parallel
     const [scheduleRes, templateRes] = await Promise.all([
       supabase
@@ -380,7 +388,7 @@ export async function addShiftNote(shiftId: string, note: string) {
 
     const { error } = await supabase
       .from("shifts")
-      .update({ notes: note.trim() || null, modified_by: profile.id })
+      .update({ notes: cleanText(note, MAX_NOTE), modified_by: profile.id })
       .eq("id", shiftId);
 
     if (error) return { error: safeError(error) };
@@ -418,8 +426,9 @@ export async function saveExtraHours(
     const { error } = await supabase
       .from("shifts")
       .update({
-        extra_hours: extraHours,
-        extra_hours_notes: extraHoursNotes,
+        // SEC-010: clamp to a non-negative payroll range; cap the note length.
+        extra_hours: clampExtraHours(extraHours),
+        extra_hours_notes: cleanText(extraHoursNotes, MAX_NOTE),
         modified_by: profile.id,
       })
       .eq("id", shiftId);

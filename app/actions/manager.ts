@@ -9,6 +9,7 @@ import { inviteRateLimitExceeded } from "@/lib/rate-limit";
 import { isEmail, isTime, cleanText, MAX_NAME, MAX_NOTE } from "@/lib/validation";
 import { isZeroLengthShift } from "@/lib/shifts";
 import { findOverlappingShift } from "@/lib/shifts.server";
+import { createNotifications, formatShiftDate } from "@/lib/notifications";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -504,6 +505,28 @@ export async function approveSwap(swapId: string) {
       return { error: safeError(shiftError) };
     }
 
+    // LOGIC-004: notify both sides that the swap is approved and the shift moved.
+    await createNotifications([
+      {
+        userId: swap.from_user_id,
+        type: "swap_approved",
+        title: "Swap approved",
+        message: `Your ${formatShiftDate(shiftOwner.date)} shift swap was approved. The shift is no longer yours.`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee",
+      },
+      {
+        userId: newAssignee,
+        type: "swap_approved",
+        title: "Shift assigned to you",
+        message: `You've been assigned the ${formatShiftDate(shiftOwner.date)} shift from a swap.`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee",
+      },
+    ]);
+
     revalidateTag("manager-swaps");
     revalidateTag("manager-schedule");
     revalidateTag("manager-dashboard");
@@ -525,7 +548,7 @@ export async function rejectSwap(swapId: string, note?: string) {
     // to a group this manager manages, before mutating via the service client.
     const { data: swap } = await service
       .from("shift_swaps")
-      .select("id, shift_id")
+      .select("id, shift_id, from_user_id, to_user_id, accepted_by, type")
       .eq("id", swapId)
       .eq("company_id", profile.company_id)
       .in("status", ["accepted_by_employee", "pending_manager"])
@@ -535,7 +558,7 @@ export async function rejectSwap(swapId: string, note?: string) {
 
     const { data: shiftOwner } = await service
       .from("shifts")
-      .select("id, groups!inner(manager_id)")
+      .select("id, date, groups!inner(manager_id)")
       .eq("id", swap.shift_id)
       .single();
 
@@ -544,12 +567,14 @@ export async function rejectSwap(swapId: string, note?: string) {
       return { error: "Unauthorized" };
     }
 
+    const cleanNote = cleanText(note, MAX_NOTE);
+
     const { data: rejected, error } = await service
       .from("shift_swaps")
       .update({
         status: "rejected_by_manager",
         approved_by: profile.id,
-        manager_notes: cleanText(note, MAX_NOTE),
+        manager_notes: cleanNote,
         manager_responded_at: new Date().toISOString(),
       })
       .eq("id", swapId)
@@ -561,6 +586,29 @@ export async function rejectSwap(swapId: string, note?: string) {
     if (!rejected || rejected.length === 0) {
       return { error: "This swap was already resolved" };
     }
+
+    // LOGIC-004: notify everyone involved that the manager rejected the swap. The
+    // requester keeps the shift; the would-be taker is released — that's the
+    // direct-swap accepter (to_user_id) or the public claimer (accepted_by),
+    // mirroring who approveSwap reassigns to.
+    const reason = cleanNote ? ` Reason: ${cleanNote}` : "";
+    const otherParty = swap.type === "direct" ? swap.to_user_id : swap.accepted_by;
+    const notifyIds = [
+      ...new Set(
+        [swap.from_user_id, otherParty].filter((id): id is string => !!id),
+      ),
+    ];
+    await createNotifications(
+      notifyIds.map((userId) => ({
+        userId,
+        type: "swap_rejected_by_manager" as const,
+        title: "Swap not approved",
+        message: `Your manager declined the ${formatShiftDate(shiftOwner.date)} shift swap.${reason}`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee/swaps",
+      })),
+    );
 
     // LOGIC-013: the requester's own schedule card shows the swap badge, so it
     // must refresh when the manager rejects; the owner dashboard pending-swap

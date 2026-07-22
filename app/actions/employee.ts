@@ -5,6 +5,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
+import {
+  createNotifications,
+  displayName,
+  formatShiftDate,
+} from "@/lib/notifications";
 
 async function getEmployeeProfile() {
   const supabase = createClient();
@@ -15,7 +20,7 @@ async function getEmployeeProfile() {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, role, company_id, is_active")
+    .select("id, role, company_id, is_active, first_name, last_name")
     .eq("id", user.id)
     .single();
 
@@ -100,17 +105,34 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
 
     if (existing) return { error: "A swap request already exists for this shift" };
 
-    const { error } = await service.from("shift_swaps").insert({
-      shift_id: shiftId,
-      from_user_id: profile.id,
-      to_user_id: toUserId,
-      company_id: profile.company_id,
-      type: "direct",
-      status: "pending_employee",
-      deadline,
-    });
+    const { data: created, error } = await service
+      .from("shift_swaps")
+      .insert({
+        shift_id: shiftId,
+        from_user_id: profile.id,
+        to_user_id: toUserId,
+        company_id: profile.company_id,
+        type: "direct",
+        status: "pending_employee",
+        deadline,
+      })
+      .select("id")
+      .single();
 
     if (error) return { error: safeError(error) };
+
+    // LOGIC-004: tell the chosen colleague they've been asked to cover a shift.
+    await createNotifications([
+      {
+        userId: toUserId,
+        type: "swap_request_received",
+        title: "New shift swap request",
+        message: `${displayName(profile.first_name, profile.last_name)} asked you to cover their ${formatShiftDate(shift.date)} shift.`,
+        relatedShiftId: shiftId,
+        relatedSwapId: created?.id ?? null,
+        actionUrl: "/employee/swaps",
+      },
+    ]);
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
@@ -125,10 +147,10 @@ export async function createPublicSwap(shiftId: string) {
   const { supabase, profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
-    // Verify shift belongs to this employee; fetch date + start_time for deadline
+    // Verify shift belongs to this employee; fetch date + start_time + group
     const { data: shift, error: shiftError } = await supabase
       .from("shifts")
-      .select("id, date, start_time")
+      .select("id, date, start_time, group_id")
       .eq("id", shiftId)
       .eq("assigned_to", profile.id)
       .single();
@@ -152,17 +174,44 @@ export async function createPublicSwap(shiftId: string) {
 
     if (existing) return { error: "A swap request already exists for this shift" };
 
-    const { error } = await service.from("shift_swaps").insert({
-      shift_id: shiftId,
-      from_user_id: profile.id,
-      to_user_id: null,
-      company_id: profile.company_id,
-      type: "public",
-      status: "pending_employee",
-      deadline,
-    });
+    const { data: created, error } = await service
+      .from("shift_swaps")
+      .insert({
+        shift_id: shiftId,
+        from_user_id: profile.id,
+        to_user_id: null,
+        company_id: profile.company_id,
+        type: "public",
+        status: "pending_employee",
+        deadline,
+      })
+      .select("id")
+      .single();
 
     if (error) return { error: safeError(error) };
+
+    // LOGIC-004: broadcast the open shift to the rest of the group so someone can
+    // pick it up. Only active members, and never the requester.
+    const { data: groupMembers } = await service
+      .from("group_members")
+      .select("user_id, users!inner(is_active)")
+      .eq("group_id", shift.group_id)
+      .neq("user_id", profile.id);
+
+    const recipients = (groupMembers ?? []).filter(
+      (m) => (m.users as { is_active: boolean } | null)?.is_active !== false,
+    );
+    await createNotifications(
+      recipients.map((m) => ({
+        userId: m.user_id,
+        type: "public_swap_available" as const,
+        title: "Shift up for grabs",
+        message: `${displayName(profile.first_name, profile.last_name)} put their ${formatShiftDate(shift.date)} shift on the board.`,
+        relatedShiftId: shiftId,
+        relatedSwapId: created?.id ?? null,
+        actionUrl: "/employee/swaps",
+      })),
+    );
 
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
@@ -186,13 +235,27 @@ export async function acceptSwap(swapId: string) {
       .eq("to_user_id", profile.id)
       .eq("type", "direct")
       .eq("status", "pending_employee")
-      .select("id");
+      .select("id, from_user_id, shift_id");
 
     if (error) return { error: safeError(error) };
     // SEC-018: 0 rows means the swap was already resolved/reassigned.
     if (!updated || updated.length === 0) {
       return { error: "This swap is no longer available" };
     }
+
+    // LOGIC-004: tell the requester their colleague accepted (now pending manager).
+    const swap = updated[0];
+    await createNotifications([
+      {
+        userId: swap.from_user_id,
+        type: "swap_request_accepted",
+        title: "Swap accepted",
+        message: `${displayName(profile.first_name, profile.last_name)} accepted your swap request. Waiting for manager approval.`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee/swaps",
+      },
+    ]);
 
     // LOGIC-013: accepting moves the swap into the manager/owner pending queue,
     // and the requester's own schedule card shows the swap state.
@@ -217,13 +280,27 @@ export async function rejectSwap(swapId: string) {
       .eq("to_user_id", profile.id)
       .eq("type", "direct")
       .eq("status", "pending_employee")
-      .select("id");
+      .select("id, from_user_id, shift_id");
 
     if (error) return { error: safeError(error) };
     // SEC-018: 0 rows means the swap was already resolved.
     if (!updated || updated.length === 0) {
       return { error: "This swap is no longer available" };
     }
+
+    // LOGIC-004: tell the requester their swap was declined so they can retry.
+    const swap = updated[0];
+    await createNotifications([
+      {
+        userId: swap.from_user_id,
+        type: "swap_request_rejected",
+        title: "Swap declined",
+        message: `${displayName(profile.first_name, profile.last_name)} declined your shift swap request.`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee/swaps",
+      },
+    ]);
 
     // LOGIC-013: refresh the requester's schedule card too.
     revalidateTag("employee-swaps");
@@ -270,7 +347,7 @@ export async function takePublicShift(swapId: string) {
     // Verify claimable (public, pending, not the requester's own)
     const { data: swap } = await supabase
       .from("shift_swaps")
-      .select("id, shift_id, deadline")
+      .select("id, shift_id, deadline, from_user_id")
       .eq("id", swapId)
       .eq("type", "public")
       .eq("status", "pending_employee")
@@ -316,6 +393,19 @@ export async function takePublicShift(swapId: string) {
     if (!claimed || claimed.length === 0) {
       return { error: "This shift was just taken by someone else" };
     }
+
+    // LOGIC-004: tell the original owner their open shift was claimed.
+    await createNotifications([
+      {
+        userId: swap.from_user_id,
+        type: "swap_request_accepted",
+        title: "Your shift was claimed",
+        message: `${displayName(profile.first_name, profile.last_name)} offered to take your open shift. Waiting for manager approval.`,
+        relatedShiftId: swap.shift_id,
+        relatedSwapId: swapId,
+        actionUrl: "/employee/swaps",
+      },
+    ]);
 
     // LOGIC-013: claiming a public shift moves it into the manager/owner pending
     // queue and badge counts.

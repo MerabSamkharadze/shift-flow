@@ -7,6 +7,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
 import { isDate, clampExtraHours, cleanText, MAX_NOTE } from "@/lib/validation";
 import { findOverlappingShift } from "@/lib/shifts.server";
+import { createNotifications, formatShiftDate } from "@/lib/notifications";
 
 // LOGIC-003: shifts on a terminal schedule (locked/archived) are read-only, in
 // line with the manager UI's own `isReadOnly` guard. Draft and published stay
@@ -259,7 +260,7 @@ export async function publishSchedule(scheduleId: string) {
     // Verify ownership + get status in one query via inner join
     const { data: schedule } = await supabase
       .from("schedules")
-      .select("id, status, groups!inner(manager_id)")
+      .select("id, status, group_id, week_start_date, groups!inner(manager_id)")
       .eq("id", scheduleId)
       .single();
 
@@ -275,6 +276,26 @@ export async function publishSchedule(scheduleId: string) {
       .eq("id", scheduleId);
 
     if (error) return { error: safeError(error) };
+
+    // LOGIC-004: tell every active member of the group their schedule is live.
+    const service = createServiceClient();
+    const { data: members } = await service
+      .from("group_members")
+      .select("user_id, users!inner(is_active)")
+      .eq("group_id", schedule.group_id);
+
+    const activeMembers = (members ?? []).filter(
+      (m) => (m.users as { is_active: boolean } | null)?.is_active !== false,
+    );
+    await createNotifications(
+      activeMembers.map((m) => ({
+        userId: m.user_id,
+        type: "new_schedule_published" as const,
+        title: "New schedule published",
+        message: `Your schedule for the week of ${formatShiftDate(schedule.week_start_date)} is now available.`,
+        actionUrl: "/employee",
+      })),
+    );
 
     revalidateScheduleSurfaces();
     return { error: null };
@@ -373,6 +394,21 @@ export async function addShift(
 
     if (error) return { shiftId: null, error: safeError(error) };
 
+    // LOGIC-004 (schedule_changed): only notify for edits to an already-published
+    // schedule — draft changes aren't visible to employees yet.
+    if (scheduleRes.data.status === "published") {
+      await createNotifications([
+        {
+          userId,
+          type: "schedule_changed",
+          title: "Schedule updated",
+          message: `A new shift on ${formatShiftDate(date)} was added to your schedule.`,
+          relatedShiftId: data.id,
+          actionUrl: "/employee",
+        },
+      ]);
+    }
+
     revalidateScheduleSurfaces();
     return { shiftId: data.id, error: null };
   } catch (err) {
@@ -438,6 +474,20 @@ export async function updateShift(shiftId: string, templateId: string) {
 
     if (error) return { error: safeError(error) };
 
+    // LOGIC-004 (schedule_changed): notify the assignee if the schedule is live.
+    if (ownedSched?.status === "published") {
+      await createNotifications([
+        {
+          userId: owned.assigned_to,
+          type: "schedule_changed",
+          title: "Shift changed",
+          message: `Your ${formatShiftDate(owned.date)} shift was changed. Check the new time.`,
+          relatedShiftId: shiftId,
+          actionUrl: "/employee",
+        },
+      ]);
+    }
+
     revalidateScheduleSurfaces();
     return { error: null };
   } catch (err) {
@@ -452,7 +502,7 @@ export async function removeShift(shiftId: string) {
     // mutating or deleting it.
     const { data: owned } = await supabase
       .from("shifts")
-      .select("id, schedules!inner(status), groups!inner(manager_id)")
+      .select("id, assigned_to, date, schedules!inner(status), groups!inner(manager_id)")
       .eq("id", shiftId)
       .single();
 
@@ -485,6 +535,20 @@ export async function removeShift(shiftId: string) {
     // swaps while the shift survives.
     const service = createServiceClient();
     await service.from("shift_swaps").delete().eq("shift_id", shiftId);
+
+    // LOGIC-004 (schedule_changed): notify the employee their published shift was
+    // removed (the shift row is gone, so no relatedShiftId).
+    if (ownedSched?.status === "published") {
+      await createNotifications([
+        {
+          userId: owned.assigned_to,
+          type: "schedule_changed",
+          title: "Shift removed",
+          message: `Your ${formatShiftDate(owned.date)} shift was removed from the schedule.`,
+          actionUrl: "/employee",
+        },
+      ]);
+    }
 
     revalidateScheduleSurfaces();
     revalidateTag("manager-swaps");

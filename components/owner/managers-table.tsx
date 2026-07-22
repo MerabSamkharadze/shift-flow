@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleDialog } from "@/components/ui/simple-dialog";
-import { deactivateManager } from "@/app/actions/owner";
+import { deactivateManager, reactivateManager } from "@/app/actions/owner";
 import { cn } from "@/lib/utils";
 
 type Manager = {
@@ -121,6 +121,26 @@ function DeactivateButton({
   );
 }
 
+function ReactivateButton({ managerId }: { managerId: string }) {
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  return (
+    <button
+      disabled={isPending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await reactivateManager(managerId);
+          if (!result?.error) router.refresh();
+        })
+      }
+      className="text-xs text-muted-foreground hover:text-emerald-600 transition-colors disabled:opacity-40"
+    >
+      {isPending ? "…" : "Reactivate"}
+    </button>
+  );
+}
+
 export function ManagersTable({ managers }: { managers: Manager[] }) {
   if (managers.length === 0) {
     return (
@@ -177,11 +197,13 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
                   })}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {m.is_active && (
+                  {m.is_active ? (
                     <DeactivateButton
                       managerId={m.id}
                       managerName={`${m.first_name} ${m.last_name}`}
                     />
+                  ) : (
+                    <ReactivateButton managerId={m.id} />
                   )}
                 </td>
               </tr>

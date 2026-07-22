@@ -10,6 +10,7 @@ import { isEmail, isTime, cleanText, MAX_NAME, MAX_NOTE } from "@/lib/validation
 import { isZeroLengthShift } from "@/lib/shifts";
 import { findOverlappingShift } from "@/lib/shifts.server";
 import { createNotifications, formatShiftDate } from "@/lib/notifications";
+import { logActivity } from "@/lib/activity";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -59,6 +60,14 @@ export async function createGroup(formData: FormData) {
 
     if (error) return { groupId: null, error: safeError(error) };
 
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "group_created",
+      entityType: "group",
+      entityId: data.id,
+    });
+
     // LOGIC-013: the owner dashboard shows a company group count.
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
@@ -79,6 +88,14 @@ export async function deleteGroup(groupId: string) {
       .eq("manager_id", profile.id);
 
     if (error) return { error: safeError(error) };
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "group_deleted",
+      entityType: "group",
+      entityId: groupId,
+    });
 
     // LOGIC-013: deleting a group cascades away its schedules, shifts, members
     // and swaps — invalidate every surface that presents them, not just the
@@ -329,6 +346,14 @@ export async function inviteEmployee(formData: FormData) {
       return { error: safeError(profileError) };
     }
 
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "employee_added",
+      entityType: "employee",
+      entityId: authData.user.id,
+    });
+
     revalidateTag("manager-dashboard");
     revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
@@ -367,8 +392,73 @@ export async function deactivateEmployee(employeeId: string) {
       // best-effort — the is_active guard is the authoritative gate
     }
 
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "employee_deactivated",
+      entityType: "employee",
+      entityId: employeeId,
+    });
+
     // LOGIC-006/013: a deactivated employee must stop appearing as schedulable
     // (member picker, colleague lists) and as an available swap target.
+    revalidateTag("manager-dashboard");
+    revalidateTag("manager-employees");
+    revalidateTag("owner-dashboard");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("group-detail");
+    return { error: null };
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
+
+// LOGIC-024: reactivation — undo a deactivation. Scoped to employees this manager
+// created (same authority boundary as deactivateEmployee).
+export async function reactivateEmployee(employeeId: string) {
+  const { profile } = await getManagerProfile();
+  try {
+    const service = createServiceClient();
+
+    const { data: updated, error } = await service
+      .from("users")
+      .update({ is_active: true })
+      .eq("id", employeeId)
+      .eq("created_by", profile.id)
+      .eq("role", "employee")
+      .select("id");
+
+    if (error) return { error: safeError(error) };
+    if (!updated || updated.length === 0) {
+      return { error: "Employee not found" };
+    }
+
+    // Lift the auth ban applied at deactivation. Unlike deactivation, the unban
+    // is NOT best-effort: a banned user is rejected by GoTrue at login before the
+    // is_active guard ever runs, so a failed unban must be surfaced — otherwise
+    // we'd report success while the employee stays locked out. Retry is safe
+    // (the is_active write is idempotent).
+    try {
+      const { error: unbanError } = await service.auth.admin.updateUserById(
+        employeeId,
+        { ban_duration: "none" },
+      );
+      if (unbanError) throw unbanError;
+    } catch (unbanErr) {
+      console.error("[reactivateEmployee] unban failed", unbanErr);
+      return { error: "Could not fully reactivate — please try again" };
+    }
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "employee_reactivated",
+      entityType: "employee",
+      entityId: employeeId,
+    });
+
     revalidateTag("manager-dashboard");
     revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
@@ -451,6 +541,8 @@ export async function approveSwap(swapId: string) {
     // 2. SEC-018: claim the swap FIRST, guarded on its current status, so a
     //    concurrent approval can't double-process it. Only if this update claims
     //    the row do we proceed to reassign the shift.
+    // LOGIC-010: approval must also happen before the swap deadline; the
+    // `deadline > now` guard is part of the atomic claim.
     const { data: approved, error: swapError } = await service
       .from("shift_swaps")
       .update({
@@ -460,11 +552,12 @@ export async function approveSwap(swapId: string) {
       })
       .eq("id", swapId)
       .in("status", ["accepted_by_employee", "pending_manager"])
+      .gt("deadline", new Date().toISOString())
       .select("id");
 
     if (swapError) return { error: safeError(swapError) };
     if (!approved || approved.length === 0) {
-      return { error: "This swap was already resolved" };
+      return { error: "This swap was already resolved or its deadline has passed" };
     }
 
     // 3. Reassign the shift. LOGIC-009: reset extra_hours — they were recorded
@@ -526,6 +619,14 @@ export async function approveSwap(swapId: string) {
         actionUrl: "/employee",
       },
     ]);
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "swap_approved",
+      entityType: "swap",
+      entityId: swapId,
+    });
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-schedule");
@@ -609,6 +710,14 @@ export async function rejectSwap(swapId: string, note?: string) {
         actionUrl: "/employee/swaps",
       })),
     );
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "swap_rejected",
+      entityType: "swap",
+      entityId: swapId,
+    });
 
     // LOGIC-013: the requester's own schedule card shows the swap badge, so it
     // must refresh when the manager rejects; the owner dashboard pending-swap

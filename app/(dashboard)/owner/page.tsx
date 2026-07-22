@@ -44,10 +44,14 @@ const ACTION_LABELS: Record<string, string> = {
   schedule_locked: "locked a schedule",
   schedule_archived: "archived a schedule",
   employee_added: "added an employee",
+  employee_deactivated: "deactivated an employee",
+  employee_reactivated: "reactivated an employee",
   manager_invited: "invited a manager",
   manager_deactivated: "deactivated a manager",
+  manager_reactivated: "reactivated a manager",
   group_created: "created a group",
   group_updated: "updated a group",
+  group_deleted: "deleted a group",
   shift_updated: "updated a shift",
 };
 

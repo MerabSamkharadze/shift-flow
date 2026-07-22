@@ -228,6 +228,8 @@ export async function acceptSwap(swapId: string) {
   const { profile } = await getEmployeeProfile();
   const service = createServiceClient();
   try {
+    // LOGIC-010: the accept must land before the swap deadline. `deadline > now`
+    // is part of the atomic update, so an expired swap simply matches 0 rows.
     const { data: updated, error } = await service
       .from("shift_swaps")
       .update({ status: "accepted_by_employee" })
@@ -235,12 +237,13 @@ export async function acceptSwap(swapId: string) {
       .eq("to_user_id", profile.id)
       .eq("type", "direct")
       .eq("status", "pending_employee")
+      .gt("deadline", new Date().toISOString())
       .select("id, from_user_id, shift_id");
 
     if (error) return { error: safeError(error) };
-    // SEC-018: 0 rows means the swap was already resolved/reassigned.
+    // SEC-018: 0 rows means the swap was already resolved, or its deadline passed.
     if (!updated || updated.length === 0) {
-      return { error: "This swap is no longer available" };
+      return { error: "This swap is no longer available (it may have expired)" };
     }
 
     // LOGIC-004: tell the requester their colleague accepted (now pending manager).

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleDialog } from "@/components/ui/simple-dialog";
-import { deactivateEmployee } from "@/app/actions/manager";
+import { deactivateEmployee, reactivateEmployee } from "@/app/actions/manager";
 import { cn } from "@/lib/utils";
 
 type Group = { id: string; name: string; color: string };
@@ -122,6 +122,26 @@ function DeactivateButton({
   );
 }
 
+function ReactivateButton({ employeeId }: { employeeId: string }) {
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  return (
+    <button
+      disabled={isPending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await reactivateEmployee(employeeId);
+          if (!result?.error) router.refresh();
+        })
+      }
+      className="text-xs text-muted-foreground hover:text-emerald-600 transition-colors disabled:opacity-40"
+    >
+      {isPending ? "…" : "Reactivate"}
+    </button>
+  );
+}
+
 export function EmployeesTable({ employees }: { employees: EmployeeRow[] }) {
   if (employees.length === 0) {
     return (
@@ -201,11 +221,13 @@ export function EmployeesTable({ employees }: { employees: EmployeeRow[] }) {
                   })}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {e.isActive && (
+                  {e.isActive ? (
                     <DeactivateButton
                       employeeId={e.id}
                       employeeName={`${e.firstName} ${e.lastName}`}
                     />
+                  ) : (
+                    <ReactivateButton employeeId={e.id} />
                   )}
                 </td>
               </tr>

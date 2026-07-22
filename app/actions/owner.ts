@@ -7,6 +7,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
 import { inviteRateLimitExceeded } from "@/lib/rate-limit";
 import { isEmail } from "@/lib/validation";
+import { logActivity } from "@/lib/activity";
 
 async function getOwnerProfile() {
   const supabase = createClient();
@@ -100,6 +101,14 @@ export async function inviteManager(formData: FormData) {
       return { error: safeError(profileError) };
     }
 
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "manager_invited",
+      entityType: "manager",
+      entityId: authData.user.id,
+    });
+
     revalidateTag("owner-managers");
     revalidateTag("owner-dashboard");
     return { error: null };
@@ -136,6 +145,66 @@ export async function deactivateManager(managerId: string) {
     } catch {
       // best-effort — the is_active guard is the authoritative gate
     }
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "manager_deactivated",
+      entityType: "manager",
+      entityId: managerId,
+    });
+
+    revalidateTag("owner-managers");
+    revalidateTag("owner-dashboard");
+    return { error: null };
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
+
+// LOGIC-024: reactivation — undo a deactivation. Sets is_active back to true and
+// lifts the auth ban so the manager can log in again.
+export async function reactivateManager(managerId: string) {
+  try {
+    const { profile } = await getOwnerProfile();
+    const service = createServiceClient();
+
+    const { data: updated, error } = await service
+      .from("users")
+      .update({ is_active: true })
+      .eq("id", managerId)
+      .eq("company_id", profile.company_id)
+      .eq("role", "manager")
+      .select("id");
+
+    if (error) return { error: safeError(error) };
+    if (!updated || updated.length === 0) {
+      return { error: "Manager not found" };
+    }
+
+    // Lift the auth ban applied at deactivation. Unlike deactivation, the unban
+    // is NOT best-effort: a banned user is rejected by GoTrue at login before the
+    // is_active guard ever runs, so a failed unban must be surfaced — otherwise
+    // we'd report success while the manager stays locked out. Retry is safe
+    // (the is_active write is idempotent).
+    try {
+      const { error: unbanError } = await service.auth.admin.updateUserById(
+        managerId,
+        { ban_duration: "none" },
+      );
+      if (unbanError) throw unbanError;
+    } catch (unbanErr) {
+      console.error("[reactivateManager] unban failed", unbanErr);
+      return { error: "Could not fully reactivate — please try again" };
+    }
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "manager_reactivated",
+      entityType: "manager",
+      entityId: managerId,
+    });
 
     revalidateTag("owner-managers");
     revalidateTag("owner-dashboard");

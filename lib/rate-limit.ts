@@ -24,11 +24,19 @@ export async function inviteRateLimitExceeded(
   const service = createServiceClient();
   const since = new Date(Date.now() - INVITE_WINDOW_MS).toISOString();
 
-  const { count } = await service
+  const { count, error } = await service
     .from("users")
     .select("id", { count: "exact", head: true })
     .eq("created_by", inviterId)
     .gte("created_at", since);
+
+  // LOGIC-022: fail CLOSED. If the count query errors we cannot prove the caller
+  // is under the limit, so treat it as exceeded rather than waving the invite
+  // through (the old `count ?? 0` silently allowed every invite on a query error).
+  if (error) {
+    console.error("[rate-limit] count query failed; failing closed", error);
+    return true;
+  }
 
   return (count ?? 0) >= INVITE_MAX;
 }

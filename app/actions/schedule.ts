@@ -8,6 +8,7 @@ import { safeError } from "@/lib/errors";
 import { isDate, clampExtraHours, cleanText, MAX_NOTE } from "@/lib/validation";
 import { findOverlappingShift } from "@/lib/shifts.server";
 import { createNotifications, formatShiftDate } from "@/lib/notifications";
+import { logActivity } from "@/lib/activity";
 
 // LOGIC-003: shifts on a terminal schedule (locked/archived) are read-only, in
 // line with the manager UI's own `isReadOnly` guard. Draft and published stay
@@ -297,7 +298,16 @@ export async function publishSchedule(scheduleId: string) {
       })),
     );
 
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "schedule_published",
+      entityType: "schedule",
+      entityId: scheduleId,
+    });
+
     revalidateScheduleSurfaces();
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -319,7 +329,7 @@ export async function addShift(
     const [scheduleRes, templateRes] = await Promise.all([
       supabase
         .from("schedules")
-        .select("id, group_id, status, groups!inner(manager_id)")
+        .select("id, group_id, status, week_start_date, week_end_date, groups!inner(manager_id)")
         .eq("id", scheduleId)
         .single(),
       supabase
@@ -332,6 +342,15 @@ export async function addShift(
     const grp = scheduleRes.data?.groups as { manager_id: string } | null;
     if (!scheduleRes.data || !grp || grp.manager_id !== profile.id) {
       return { shiftId: null, error: "Unauthorized" };
+    }
+    // LOGIC-014: the shift date must fall inside the schedule's own week —
+    // otherwise it's invisible in every weekly view yet still counted in the
+    // monthly payroll report. YYYY-MM-DD strings compare lexicographically.
+    if (
+      date < scheduleRes.data.week_start_date ||
+      date > scheduleRes.data.week_end_date
+    ) {
+      return { shiftId: null, error: "That date is outside this schedule's week" };
     }
     // LOGIC-003: no edits to a locked/archived schedule.
     if (READONLY_SCHEDULE_STATUSES.has(scheduleRes.data.status)) {

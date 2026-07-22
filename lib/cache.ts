@@ -728,9 +728,9 @@ export const getEmployeeScheduleData = unstable_cache(
         scheduleIds.length
           ? service
               .from("schedules")
-              .select("id, group_id")
+              .select("id, group_id, status")
               .in("id", scheduleIds)
-          : Promise.resolve({ data: [] as { id: string; group_id: string }[] }),
+          : Promise.resolve({ data: [] as { id: string; group_id: string; status: string }[] }),
         shiftIds.length
           ? service
               .from("shift_swaps")
@@ -789,8 +789,19 @@ export const getEmployeeScheduleData = unstable_cache(
       colleagueGroupsMap.set(m.user_id, list);
     }
 
+    // LOGIC-008: employees must NOT see shifts from DRAFT (unpublished) schedules
+    // — only published/locked/archived are real. This mirrors the team view,
+    // which already filters to published/locked. Exclude only schedules KNOWN to
+    // be draft, so a transient miss on the schedules fetch keeps published shifts
+    // visible rather than hiding the whole week.
+    const draftScheduleIds = new Set(
+      (schedules ?? []).filter((s) => s.status === "draft").map((s) => s.id),
+    );
+
     // Assemble props
-    const shiftRows = (shifts ?? []).map((s) => {
+    const shiftRows = (shifts ?? [])
+      .filter((s) => !draftScheduleIds.has(s.schedule_id))
+      .map((s) => {
       const groupId = scheduleGroupMap.get(s.schedule_id) ?? "";
       const group = groupMap.get(groupId) ?? { name: "", color: "#6366f1" };
       const swap = swapMap.get(s.id);

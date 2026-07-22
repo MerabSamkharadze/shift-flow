@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { shiftDurationHours } from "@/lib/shifts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// LOGIC-001: hour math (incl. midnight-spanning shifts) lives in lib/shifts.
 
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -13,19 +15,6 @@ function addDays(dateStr: string, days: number): string {
 
 function fmtTime(t: string) {
   return t.slice(0, 5);
-}
-
-/** Shift duration in decimal hours, e.g. "09:00"–"17:30" → 8.5 */
-function shiftDurationHours(start: string, end: string): number {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
-}
-
-/** Format hours: 8 → "8h", 8.5 → "8.5h", 0 → "" */
-function fmtHours(h: number): string {
-  if (h === 0) return "";
-  return h % 1 === 0 ? `${h}h` : `${h.toFixed(1)}h`;
 }
 
 /**

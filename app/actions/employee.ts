@@ -194,8 +194,12 @@ export async function acceptSwap(swapId: string) {
       return { error: "This swap is no longer available" };
     }
 
+    // LOGIC-013: accepting moves the swap into the manager/owner pending queue,
+    // and the requester's own schedule card shows the swap state.
     revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -221,7 +225,9 @@ export async function rejectSwap(swapId: string) {
       return { error: "This swap is no longer available" };
     }
 
+    // LOGIC-013: refresh the requester's schedule card too.
     revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
@@ -247,8 +253,10 @@ export async function cancelSwap(swapId: string) {
       return { error: "This swap can no longer be cancelled" };
     }
 
+    // LOGIC-013: a cancelled request must also drop off the manager's queue.
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
+    revalidateTag("manager-swaps");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -309,8 +317,12 @@ export async function takePublicShift(swapId: string) {
       return { error: "This shift was just taken by someone else" };
     }
 
+    // LOGIC-013: claiming a public shift moves it into the manager/owner pending
+    // queue and badge counts.
     revalidateTag("employee-swaps");
     revalidateTag("manager-swaps");
+    revalidateTag("manager-dashboard");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };

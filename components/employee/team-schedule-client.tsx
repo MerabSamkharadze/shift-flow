@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, Search, X, Clock, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { shiftDurationHours } from "@/lib/shifts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,12 +55,6 @@ function fmtDayDate(dateStr: string) {
 function todayStr(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function shiftDurationHours(start: string, end: string): number {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
 }
 
 function formatHours(h: number): string {

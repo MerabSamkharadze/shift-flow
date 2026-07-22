@@ -187,12 +187,12 @@ export function ScheduleClient({
   const [overtimeHours, setOvertimeHours] = useState("");
   const [overtimeNotes, setOvertimeNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const prevWeek = addDays(weekStart, -7);
   const nextWeek = addDays(weekStart, 7);
 
-  const selectedGroup = groups.find((g) => g.id === selectedGroupId)!;
   const isReadOnly =
     schedule?.status === "archived" || schedule?.status === "locked";
   const canPublish = schedule?.status === "draft";
@@ -241,10 +241,20 @@ export function ScheduleClient({
   }
 
   function handleCopyFromLastWeek() {
+    setNotice(null);
     startTransition(async () => {
       const result = await copyFromLastWeek(selectedGroupId, weekStart);
       if (result.error) setError(result.error);
-      else router.refresh();
+      else {
+        // LOGIC-011: some shifts may have been dropped (employee no longer an
+        // active member, or would double-book them) — tell the manager.
+        if (result.skipped && result.skipped > 0) {
+          setNotice(
+            `${result.skipped} shift${result.skipped === 1 ? "" : "s"} were not copied (employee no longer in this group, or it would overlap another shift).`,
+          );
+        }
+        router.refresh();
+      }
     });
   }
 
@@ -510,6 +520,12 @@ export function ScheduleClient({
       </div>
 
       {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
+
+      {notice && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+          {notice}
+        </div>
+      )}
 
       {schedule && templates.length === 0 && (
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">

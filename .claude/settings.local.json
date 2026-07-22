@@ -17,7 +17,14 @@
       "Bash(grep -nA12 \"function handleExternalUrl\" node_modules/next/dist/client/components/router-reducer/reducers/navigate-reducer.js)",
       "Bash(npm audit *)",
       "Bash(npm outdated *)",
-      "Bash(grep -vi \"verifyOtp\\\\|//\")"
+      "Bash(grep -vi \"verifyOtp\\\\|//\")",
+      "Bash(xargs grep -lniE \"phone|updateProfile|update_profile\")",
+      "Bash(grep -iE \"\\\\.sql$\")",
+      "Bash(echo \"=== EXIT $? ===\")",
+      "Bash(echo \"---EXIT:$?\")",
+      "Bash(node -e ' *)",
+      "Bash(grep -rniE \"activity_logs\\\\\"\\\\\\)\\\\.insert|from\\\\\\(.activity_logs.\\\\\\)[[:space:]]*$|insert.*activity_log\" app/ lib/ components/)",
+      "Bash(echo \"exit:$?\")"
     ]
   }
 }

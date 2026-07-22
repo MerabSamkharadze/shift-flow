@@ -103,8 +103,8 @@ export async function inviteManager(formData: FormData) {
     revalidateTag("owner-managers");
     revalidateTag("owner-dashboard");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -140,7 +140,7 @@ export async function deactivateManager(managerId: string) {
     revalidateTag("owner-managers");
     revalidateTag("owner-dashboard");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }

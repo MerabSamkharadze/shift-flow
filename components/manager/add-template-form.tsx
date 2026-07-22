@@ -36,6 +36,15 @@ export function AddTemplateForm({ groupId }: { groupId: string }) {
     formData.set("color", color);
     setError(null);
 
+    // LOGIC-001: a zero-length shift (start === end) is invalid; overnight shifts
+    // (end earlier than start, e.g. 22:00→06:00) are valid and supported.
+    const start = formData.get("start_time") as string;
+    const end = formData.get("end_time") as string;
+    if (start && end && start === end) {
+      setError("Start and end time must be different");
+      return;
+    }
+
     startTransition(async () => {
       const result = await createShiftTemplate(groupId, formData);
       if (result.error) {

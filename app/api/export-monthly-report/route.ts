@@ -2,18 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { shiftDurationHours } from "@/lib/shifts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Parse "HH:MM:SS" → decimal hours.
- * Uses Math.max(0, …) so invalid/same-time rows don't produce negatives.
- */
-function shiftDurationHours(start: string, end: string): number {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  return Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60);
-}
+// LOGIC-001: hour math (incl. midnight-spanning shifts) lives in lib/shifts.
 
 /** Round to at most 2 decimal places. */
 function round2(n: number): number {
@@ -76,10 +68,13 @@ export async function GET(req: NextRequest) {
   // Step 1: Collect schedule IDs belonging to this company that overlap the month.
   //   week_start_date ≤ monthEnd  AND  week_end_date ≥ monthStart
   //   (covers partial overlaps where a week straddles the month boundary)
+  // LOGIC-007: exclude DRAFT (unpublished, still-being-planned) schedules — only
+  // finalized schedules contribute to payable hours.
   const { data: companySchedules } = await service
     .from("schedules")
     .select("id")
     .eq("company_id", profile.company_id)
+    .neq("status", "draft")
     .lte("week_start_date", monthEnd)
     .gte("week_end_date", monthStart);
 
@@ -152,9 +147,10 @@ export async function GET(req: NextRequest) {
     a.employeeName.localeCompare(b.employeeName),
   );
 
-  // Grand totals
-  const totalRegular = round2(rows.reduce((s, r) => s + r.regularHours, 0));
-  const totalExtra = round2(rows.reduce((s, r) => s + r.extraHours, 0));
+  // Grand totals — LOGIC-018: sum the *rounded* per-row values (matching what
+  // each row displays) so the TOTAL equals the sum of the visible rows.
+  const totalRegular = round2(rows.reduce((s, r) => s + round2(r.regularHours), 0));
+  const totalExtra = round2(rows.reduce((s, r) => s + round2(r.extraHours), 0));
   const totalAll = round2(totalRegular + totalExtra);
 
   // ── Build Excel ─────────────────────────────────────────────────────────────

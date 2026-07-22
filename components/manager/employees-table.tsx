@@ -1,8 +1,10 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SimpleDialog } from "@/components/ui/simple-dialog";
 import { deactivateEmployee } from "@/app/actions/manager";
 import { cn } from "@/lib/utils";
 
@@ -45,23 +47,78 @@ function StatusBadge({ status }: { status: Status }) {
   );
 }
 
-function DeactivateButton({ employeeId }: { employeeId: string }) {
+function DeactivateButton({
+  employeeId,
+  employeeName,
+}: {
+  employeeId: string;
+  employeeName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
-  return (
-    <button
-      disabled={isPending}
-      onClick={() =>
-        startTransition(async () => {
-          await deactivateEmployee(employeeId);
-          router.refresh();
-        })
+  function handleConfirm() {
+    setError(null);
+    startTransition(async () => {
+      const result = await deactivateEmployee(employeeId);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        router.refresh();
       }
-      className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
-    >
-      {isPending ? "…" : "Deactivate"}
-    </button>
+    });
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          setError(null);
+          setOpen(true);
+        }}
+        className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+      >
+        Deactivate
+      </button>
+
+      <SimpleDialog
+        open={open}
+        onClose={() => !isPending && setOpen(false)}
+        title="Deactivate employee"
+      >
+        <p className="text-sm text-muted-foreground mb-2">
+          Deactivate{" "}
+          <span className="font-medium text-foreground">{employeeName}</span>?
+          They will be signed out and can no longer log in.
+        </p>
+        <p className="text-sm text-muted-foreground mb-4">
+          This cannot be undone from here. Any shifts already assigned to them
+          stay on the schedule — reassign or remove those shifts separately.
+        </p>
+        {error && <p className="text-sm text-destructive mb-4">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={isPending}
+          >
+            {isPending ? "Deactivating…" : "Deactivate"}
+          </Button>
+        </div>
+      </SimpleDialog>
+    </>
   );
 }
 
@@ -144,7 +201,12 @@ export function EmployeesTable({ employees }: { employees: EmployeeRow[] }) {
                   })}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {e.isActive && <DeactivateButton employeeId={e.id} />}
+                  {e.isActive && (
+                    <DeactivateButton
+                      employeeId={e.id}
+                      employeeName={`${e.firstName} ${e.lastName}`}
+                    />
+                  )}
                 </td>
               </tr>
             );

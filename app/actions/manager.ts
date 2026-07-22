@@ -7,6 +7,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { safeError } from "@/lib/errors";
 import { inviteRateLimitExceeded } from "@/lib/rate-limit";
 import { isEmail, isTime, cleanText, MAX_NAME, MAX_NOTE } from "@/lib/validation";
+import { isZeroLengthShift } from "@/lib/shifts";
+import { findOverlappingShift } from "@/lib/shifts.server";
 
 async function getManagerProfile() {
   const supabase = createClient();
@@ -56,11 +58,13 @@ export async function createGroup(formData: FormData) {
 
     if (error) return { groupId: null, error: safeError(error) };
 
+    // LOGIC-013: the owner dashboard shows a company group count.
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
+    revalidateTag("owner-dashboard");
     return { groupId: data.id, error: null };
-  } catch {
-    return { groupId: null, error: "Something went wrong" };
+  } catch (err) {
+    return { groupId: null, error: safeError(err) };
   }
 }
 
@@ -75,11 +79,20 @@ export async function deleteGroup(groupId: string) {
 
     if (error) return { error: safeError(error) };
 
+    // LOGIC-013: deleting a group cascades away its schedules, shifts, members
+    // and swaps — invalidate every surface that presents them, not just the
+    // manager's own group list.
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
+    revalidateTag("manager-schedule");
+    revalidateTag("manager-swaps");
+    revalidateTag("employee-team");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-swaps");
+    revalidateTag("owner-dashboard");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -100,8 +113,8 @@ export async function updateGroup(groupId: string, name: string) {
     revalidateTag("manager-groups");
     revalidateTag("manager-dashboard");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -120,6 +133,12 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
     // SEC-010: reject malformed times (they otherwise poison duration/payroll math)
     if (!isTime(startTime) || !isTime(endTime)) {
       return { error: "Invalid time format" };
+    }
+    // LOGIC-001: a zero-length shift (start === end) is the only genuinely
+    // invalid duration. Overnight shifts (end < start, e.g. 22:00→06:00) are
+    // valid and handled by the midnight-aware duration math in lib/shifts.
+    if (isZeroLengthShift(startTime, endTime)) {
+      return { error: "Start and end time must be different" };
     }
 
     // Verify group ownership
@@ -145,8 +164,8 @@ export async function createShiftTemplate(groupId: string, formData: FormData) {
     revalidateTag("group-detail");
     revalidateTag("manager-schedule");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -175,8 +194,8 @@ export async function deleteShiftTemplate(templateId: string, groupId: string) {
     revalidateTag("group-detail");
     revalidateTag("manager-schedule");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -204,11 +223,14 @@ export async function addGroupMember(groupId: string, userId: string) {
       return { error: safeError(error) };
     }
 
+    // LOGIC-013: a newly added member must become schedulable immediately.
     revalidateTag("group-detail");
     revalidateTag("employee-team");
+    revalidateTag("employee-schedule");
+    revalidateTag("manager-schedule");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -234,11 +256,14 @@ export async function removeGroupMember(memberId: string, groupId: string) {
 
     if (error) return { error: safeError(error) };
 
+    // LOGIC-013: removal changes who is schedulable and whose shifts show.
     revalidateTag("group-detail");
     revalidateTag("employee-team");
+    revalidateTag("employee-schedule");
+    revalidateTag("manager-schedule");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -307,8 +332,8 @@ export async function inviteEmployee(formData: FormData) {
     revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -341,12 +366,18 @@ export async function deactivateEmployee(employeeId: string) {
       // best-effort — the is_active guard is the authoritative gate
     }
 
+    // LOGIC-006/013: a deactivated employee must stop appearing as schedulable
+    // (member picker, colleague lists) and as an available swap target.
     revalidateTag("manager-dashboard");
     revalidateTag("manager-employees");
     revalidateTag("owner-dashboard");
+    revalidateTag("manager-schedule");
+    revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("group-detail");
     return { error: null };
-  } catch {
-    return { error: "Something went wrong" };
+  } catch (err) {
+    return { error: safeError(err) };
   }
 }
 
@@ -370,10 +401,11 @@ export async function approveSwap(swapId: string) {
 
     // 1b. SEC-002: the service client bypasses RLS, so verify explicitly that
     //     the shift being swapped belongs to a group THIS manager manages —
-    //     not merely to someone else in the same company.
+    //     not merely to someone else in the same company. Also pull the fields
+    //     needed to re-validate the reassignment (group, date, times).
     const { data: shiftOwner } = await service
       .from("shifts")
-      .select("id, groups!inner(manager_id)")
+      .select("id, group_id, date, start_time, end_time, groups!inner(manager_id)")
       .eq("id", swap.shift_id)
       .single();
 
@@ -386,6 +418,34 @@ export async function approveSwap(swapId: string) {
     const newAssignee =
       swap.type === "direct" ? swap.to_user_id : swap.accepted_by;
     if (!newAssignee) return { error: "No recipient found for this swap" };
+
+    // LOGIC-009: re-validate the recipient AT APPROVAL TIME — between request and
+    // approval they may have been removed from the group or deactivated.
+    const { data: recipientMembership } = await service
+      .from("group_members")
+      .select("id, users!inner(is_active)")
+      .eq("group_id", shiftOwner.group_id)
+      .eq("user_id", newAssignee)
+      .maybeSingle();
+
+    if (
+      !recipientMembership ||
+      (recipientMembership.users as { is_active: boolean } | null)?.is_active === false
+    ) {
+      return { error: "The employee for this swap is no longer available" };
+    }
+
+    // LOGIC-002: the recipient must not already be working an overlapping shift.
+    const conflict = await findOverlappingShift(
+      newAssignee,
+      shiftOwner.date,
+      shiftOwner.start_time,
+      shiftOwner.end_time,
+      swap.shift_id,
+    );
+    if (conflict) {
+      return { error: "The employee already has an overlapping shift that day" };
+    }
 
     // 2. SEC-018: claim the swap FIRST, guarded on its current status, so a
     //    concurrent approval can't double-process it. Only if this update claims
@@ -406,20 +466,51 @@ export async function approveSwap(swapId: string) {
       return { error: "This swap was already resolved" };
     }
 
-    // 3. Reassign the shift — only updates assigned_to + modified_by; all other
-    //    columns (extra_hours, start_time, etc.) are preserved automatically.
+    // 3. Reassign the shift. LOGIC-009: reset extra_hours — they were recorded
+    //    against the ORIGINAL assignee's work and must not follow the shift to
+    //    the new person.
     const { error: shiftError } = await service
       .from("shifts")
-      .update({ assigned_to: newAssignee, modified_by: profile.id })
+      .update({
+        assigned_to: newAssignee,
+        modified_by: profile.id,
+        extra_hours: null,
+        extra_hours_notes: null,
+      })
       .eq("id", swap.shift_id);
 
-    if (shiftError) return { error: safeError(shiftError) };
+    if (shiftError) {
+      // LOGIC-009: no DB transaction is available here, so compensate for the
+      // failed reassign by reverting the swap out of "approved" — otherwise it
+      // would be permanently stuck approved while the shift never moved. Check
+      // the revert itself: if it too fails, the swap is stuck and needs manual
+      // reconciliation, so log it loudly rather than swallowing it.
+      const { data: reverted, error: revertError } = await service
+        .from("shift_swaps")
+        .update({
+          status: "accepted_by_employee",
+          approved_by: null,
+          manager_responded_at: null,
+        })
+        .eq("id", swapId)
+        .eq("status", "approved")
+        .select("id");
+      if (revertError || !reverted || reverted.length === 0) {
+        console.error(
+          "[approveSwap] shift reassign failed AND revert did not take — swap stuck approved with shift unmoved",
+          { swapId, shiftId: swap.shift_id, shiftError, revertError },
+        );
+      }
+      return { error: safeError(shiftError) };
+    }
 
     revalidateTag("manager-swaps");
     revalidateTag("manager-schedule");
     revalidateTag("manager-dashboard");
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
+    revalidateTag("employee-team");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -471,9 +562,14 @@ export async function rejectSwap(swapId: string, note?: string) {
       return { error: "This swap was already resolved" };
     }
 
+    // LOGIC-013: the requester's own schedule card shows the swap badge, so it
+    // must refresh when the manager rejects; the owner dashboard pending-swap
+    // count also changes.
     revalidateTag("manager-swaps");
     revalidateTag("manager-dashboard");
     revalidateTag("employee-swaps");
+    revalidateTag("employee-schedule");
+    revalidateTag("owner-dashboard");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };

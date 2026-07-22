@@ -137,6 +137,7 @@ export async function createDirectSwap(shiftId: string, toUserId: string) {
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -216,6 +217,7 @@ export async function createPublicSwap(shiftId: string) {
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -309,6 +311,7 @@ export async function rejectSwap(swapId: string) {
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };
@@ -337,6 +340,7 @@ export async function cancelSwap(swapId: string) {
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("manager-swaps");
+    revalidateTag("manager-schedule");
     return { error: null };
   } catch (err) {
     return { error: safeError(err) };

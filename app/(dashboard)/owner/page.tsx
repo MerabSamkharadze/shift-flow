@@ -52,6 +52,7 @@ const ACTION_LABELS: Record<string, string> = {
   group_created: "created a group",
   group_updated: "updated a group",
   group_deleted: "deleted a group",
+  groups_reassigned: "reassigned groups",
   shift_updated: "updated a shift",
 };
 

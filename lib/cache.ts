@@ -573,6 +573,23 @@ export const getScheduleData = unstable_cache(
         .maybeSingle(),
     ]);
 
+    // LOGIC-012: derive a "swap pending" signal per shift from live in-flight
+    // swaps (not the shifts.status column, which would go stale when a swap
+    // expires with no job to reset it). Gives the manager grid the mid-swap
+    // indicator it previously lacked.
+    const shiftIds = (shiftsRaw ?? []).map((s) => s.id);
+    const { data: pendingSwaps } = shiftIds.length
+      ? await service
+          .from("shift_swaps")
+          .select("shift_id")
+          .in("shift_id", shiftIds)
+          .in("status", ["pending_employee", "accepted_by_employee", "pending_manager"])
+      : { data: [] as { shift_id: string }[] };
+
+    const pendingSwapShiftIds = new Set(
+      (pendingSwaps ?? []).map((s) => s.shift_id),
+    );
+
     const shifts = (shiftsRaw ?? []).map((s) => ({
       id: s.id,
       userId: s.assigned_to,
@@ -583,6 +600,7 @@ export const getScheduleData = unstable_cache(
       notes: s.notes,
       extraHours: s.extra_hours,
       extraHoursNotes: s.extra_hours_notes,
+      hasPendingSwap: pendingSwapShiftIds.has(s.id),
     }));
 
     return {

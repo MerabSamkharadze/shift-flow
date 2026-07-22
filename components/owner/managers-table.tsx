@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SimpleDialog } from "@/components/ui/simple-dialog";
-import { deactivateManager, reactivateManager } from "@/app/actions/owner";
+import {
+  deactivateManager,
+  reactivateManager,
+  reassignManagerGroups,
+} from "@/app/actions/owner";
 import { cn } from "@/lib/utils";
 
 type Manager = {
@@ -141,6 +145,114 @@ function ReactivateButton({ managerId }: { managerId: string }) {
   );
 }
 
+function ReassignGroupsButton({
+  managerId,
+  managerName,
+  targets,
+}: {
+  managerId: string;
+  managerName: string;
+  targets: { id: string; name: string }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [toId, setToId] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const router = useRouter();
+
+  function handleConfirm() {
+    if (!toId) {
+      setError("Pick a manager to reassign to");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const result = await reassignManagerGroups(managerId, toId);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        setToId("");
+        router.refresh();
+      }
+    });
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          setError(null);
+          setToId("");
+          setOpen(true);
+        }}
+        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Reassign groups
+      </button>
+
+      <SimpleDialog
+        open={open}
+        onClose={() => !isPending && setOpen(false)}
+        title="Reassign groups"
+      >
+        <p className="text-sm text-muted-foreground mb-4">
+          Move all groups and schedules owned by{" "}
+          <span className="font-medium text-foreground">{managerName}</span> to
+          another manager. Useful when a manager has been deactivated and their
+          groups need an active owner.
+        </p>
+        {targets.length === 0 ? (
+          <p className="text-sm text-muted-foreground mb-4">
+            There is no other active manager to reassign to. Invite or reactivate
+            one first.
+          </p>
+        ) : (
+          <div className="space-y-1.5 mb-4">
+            <label
+              htmlFor={`reassign-${managerId}`}
+              className="text-sm font-medium"
+            >
+              Reassign to
+            </label>
+            <select
+              id={`reassign-${managerId}`}
+              value={toId}
+              onChange={(e) => setToId(e.target.value)}
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+            >
+              <option value="">Select a manager…</option>
+              {targets.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive mb-4">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleConfirm}
+            disabled={isPending || targets.length === 0}
+          >
+            {isPending ? "Reassigning…" : "Reassign"}
+          </Button>
+        </div>
+      </SimpleDialog>
+    </>
+  );
+}
+
 export function ManagersTable({ managers }: { managers: Manager[] }) {
   if (managers.length === 0) {
     return (
@@ -197,14 +309,26 @@ export function ManagersTable({ managers }: { managers: Manager[] }) {
                   })}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {m.is_active ? (
-                    <DeactivateButton
+                  <div className="flex items-center justify-end gap-3">
+                    <ReassignGroupsButton
                       managerId={m.id}
                       managerName={`${m.first_name} ${m.last_name}`}
+                      targets={managers
+                        .filter((x) => x.is_active && x.id !== m.id)
+                        .map((x) => ({
+                          id: x.id,
+                          name: `${x.first_name} ${x.last_name}`,
+                        }))}
                     />
-                  ) : (
-                    <ReactivateButton managerId={m.id} />
-                  )}
+                    {m.is_active ? (
+                      <DeactivateButton
+                        managerId={m.id}
+                        managerName={`${m.first_name} ${m.last_name}`}
+                      />
+                    ) : (
+                      <ReactivateButton managerId={m.id} />
+                    )}
+                  </div>
                 </td>
               </tr>
             );

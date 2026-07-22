@@ -2,7 +2,7 @@
 
 import { useOptimistic, useTransition, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus, StickyNote } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, StickyNote, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ export type ShiftRow = {
   notes: string | null;
   extraHours: number | null;
   extraHoursNotes: string | null;
+  hasPendingSwap?: boolean;
 };
 export type ScheduleRow = {
   id: string;
@@ -440,6 +441,14 @@ export function ScheduleClient({
                 size={9}
                 className="text-muted-foreground opacity-60"
               />
+            )}
+            {shift.hasPendingSwap && (
+              <span
+                title="Swap pending"
+                className="inline-flex items-center text-blue-600 dark:text-blue-400"
+              >
+                <ArrowLeftRight size={9} />
+              </span>
             )}
             {shift.extraHours && shift.extraHours > 0 && (
               <span className="text-[9px] font-semibold leading-none text-amber-600 dark:text-amber-400">

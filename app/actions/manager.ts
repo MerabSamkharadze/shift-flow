@@ -721,9 +721,10 @@ export async function rejectSwap(swapId: string, note?: string) {
 
     // LOGIC-013: the requester's own schedule card shows the swap badge, so it
     // must refresh when the manager rejects; the owner dashboard pending-swap
-    // count also changes.
+    // count and the manager grid's swap indicator also change.
     revalidateTag("manager-swaps");
     revalidateTag("manager-dashboard");
+    revalidateTag("manager-schedule");
     revalidateTag("employee-swaps");
     revalidateTag("employee-schedule");
     revalidateTag("owner-dashboard");

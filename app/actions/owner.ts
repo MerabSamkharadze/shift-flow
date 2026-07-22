@@ -213,3 +213,84 @@ export async function reactivateManager(managerId: string) {
     return { error: safeError(err) };
   }
 }
+
+// LOGIC-005: hand a manager's groups (and their schedules) to another manager.
+// This is the escape hatch for the "deactivating a manager permanently freezes
+// their groups" risk — the owner can move ownership to an active manager.
+export async function reassignManagerGroups(
+  fromManagerId: string,
+  toManagerId: string,
+) {
+  try {
+    const { profile } = await getOwnerProfile();
+
+    if (fromManagerId === toManagerId) {
+      return { error: "Choose a different manager to reassign to" };
+    }
+
+    const service = createServiceClient();
+
+    // Target must be an ACTIVE manager in this company.
+    const { data: target } = await service
+      .from("users")
+      .select("id, is_active")
+      .eq("id", toManagerId)
+      .eq("company_id", profile.company_id)
+      .eq("role", "manager")
+      .maybeSingle();
+
+    if (!target || target.is_active === false) {
+      return { error: "The target manager is not available" };
+    }
+
+    // Source must be a manager in this company (usually the deactivated one).
+    const { data: source } = await service
+      .from("users")
+      .select("id")
+      .eq("id", fromManagerId)
+      .eq("company_id", profile.company_id)
+      .eq("role", "manager")
+      .maybeSingle();
+
+    if (!source) return { error: "Manager not found" };
+
+    // Move the groups...
+    const { data: movedGroups, error: groupErr } = await service
+      .from("groups")
+      .update({ manager_id: toManagerId })
+      .eq("manager_id", fromManagerId)
+      .eq("company_id", profile.company_id)
+      .select("id");
+
+    if (groupErr) return { error: safeError(groupErr) };
+
+    // ...AND their schedules: schedules RLS/ownership keys off schedules.manager_id,
+    // so without this the new manager could not publish or edit those schedules.
+    const { error: schedErr } = await service
+      .from("schedules")
+      .update({ manager_id: toManagerId })
+      .eq("manager_id", fromManagerId)
+      .eq("company_id", profile.company_id);
+
+    if (schedErr) return { error: safeError(schedErr) };
+
+    await logActivity({
+      companyId: profile.company_id,
+      userId: profile.id,
+      action: "groups_reassigned",
+      entityType: "manager",
+      entityId: fromManagerId,
+      newValue: { toManagerId, groupCount: movedGroups?.length ?? 0 },
+    });
+
+    revalidateTag("owner-managers");
+    revalidateTag("owner-dashboard");
+    revalidateTag("manager-groups");
+    revalidateTag("manager-schedule");
+    revalidateTag("manager-dashboard");
+    revalidateTag("manager-swaps");
+    return { error: null, movedCount: movedGroups?.length ?? 0 };
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
